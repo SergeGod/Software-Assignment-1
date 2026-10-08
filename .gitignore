@@ -1,0 +1,26 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Local SQLite data (the schema lives in schema.sql, never a committed .db)
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets and local config
+.env
+
+# Test and coverage output
+.coverage
+htmlcov/
+.pytest_cache/
+
+# OS / editor clutter
+.DS_Store
+.vscode/
+.idea/
