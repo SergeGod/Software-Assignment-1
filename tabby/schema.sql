@@ -1,8 +1,0 @@
--- Tabby SQLite schema, applied on every boot by tabby/db.py:init_db().
---
--- Rules for this file:
---   * Only CREATE ... IF NOT EXISTS. Running it on an existing database must
---     create what is missing and leave existing tables and rows untouched.
---   * Never DROP or DELETE here: a restart must not wipe user data.
---
--- Domain tables are added as each domain is built.

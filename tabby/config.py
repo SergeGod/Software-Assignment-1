@@ -9,6 +9,7 @@ HOST = "0.0.0.0"
 DEFAULT_PORT = 8000
 # Next to the source when run locally; the container sets DATA_DIR=/data.
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+DEFAULT_SESSION_DAYS = 30
 DB_FILENAME = "tabby.db"
 
 
@@ -16,6 +17,7 @@ DB_FILENAME = "tabby.db"
 class Settings:
     port: int
     data_dir: Path
+    session_days: int = DEFAULT_SESSION_DAYS
 
     @property
     def db_path(self) -> Path:
@@ -26,4 +28,5 @@ def load_settings() -> Settings:
     return Settings(
         port=int(os.environ.get("PORT", DEFAULT_PORT)),
         data_dir=Path(os.environ.get("DATA_DIR", DEFAULT_DATA_DIR)),
+        session_days=int(os.environ.get("SESSION_DAYS", DEFAULT_SESSION_DAYS)),
     )
