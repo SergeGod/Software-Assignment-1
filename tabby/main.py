@@ -7,6 +7,7 @@ from tabby.accounts.routes import router as accounts_router
 from tabby.config import Settings
 from tabby.db import init_db
 from tabby.errors import TabbyError
+from tabby.ledger.routes import router as ledger_router
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -24,4 +25,5 @@ def create_app(settings: Settings) -> FastAPI:
         return {"app": "tabby", "status": "ok"}
 
     app.include_router(accounts_router)
+    app.include_router(ledger_router)
     return app

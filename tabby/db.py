@@ -10,6 +10,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 # Each domain owns its own tables. All of them live in the one SQLite file.
 SCHEMA_FILES = [
     PACKAGE_DIR / "accounts" / "schema.sql",
+    PACKAGE_DIR / "ledger" / "schema.sql",
 ]
 
 
