@@ -15,7 +15,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Then open <http://localhost:8000/>. The interactive API docs are at <http://localhost:8000/docs>.
+Then open <http://localhost:8000/>, sign up, and add a friend by username (sign up a second account in a private window to try it alone). The interactive API docs are at <http://localhost:8000/docs>.
 
 No setup step is needed: on first start the app creates its data directory, the SQLite file and any missing tables.
 
@@ -34,8 +34,9 @@ Example: `PORT=9000 DATA_DIR=/tmp/tabby python app.py`
 ## Database
 
 - SQLite file: `$DATA_DIR/tabby.db` (locally `./data/tabby.db`, in the container `/data/tabby.db`).
-- Schema: one `schema.sql` per domain ([accounts](tabby/accounts/schema.sql), [ledger](tabby/ledger/schema.sql)), applied on every boot. They only use `CREATE ... IF NOT EXISTS`, so existing tables and rows are never dropped or changed.
+- Schema: one `schema.sql` per domain ([accounts](tabby/accounts/schema.sql), [ledger](tabby/ledger/schema.sql), [settlement](tabby/settlement/schema.sql)), applied on every boot. They only use `CREATE ... IF NOT EXISTS`, so existing tables and rows are never dropped or changed.
 - The `.db` file is never committed; it is created at runtime.
+- Seed data: the starter expense categories live in [`tabby/ledger/seed_categories.csv`](tabby/ledger/seed_categories.csv) and are inserted on boot only when the `categories` table is empty, so restarts never duplicate them.
 
 ## Run with Docker
 
@@ -55,7 +56,8 @@ All endpoints are under `/api` and documented interactively at `/docs`. Everythi
 | Domain | Endpoints |
 |---|---|
 | Accounts | `POST /api/signup`, `POST /api/login`, `POST /api/logout`, `GET /api/me`, `GET/POST /api/friends` |
-| Ledger (Domain A) | `GET/POST /api/groups`, `GET /api/groups/{id}`, `POST /api/groups/{id}/members`, `DELETE /api/groups/{id}/members/{user_id}`, `GET/POST /api/groups/{id}/expenses`, `DELETE /api/groups/{id}/expenses/{expense_id}` |
+| Ledger (Domain A) | `GET /api/categories`, `GET/POST /api/groups`, `GET /api/groups/{id}`, `POST /api/groups/{id}/members`, `DELETE /api/groups/{id}/members/{user_id}`, `GET/POST /api/groups/{id}/expenses`, `DELETE /api/groups/{id}/expenses/{expense_id}`, `GET /api/groups/{id}/spending` |
+| Settlement (Domain B) | `GET /api/groups/{id}/settlement` (balances + suggested transfers), `GET/POST /api/groups/{id}/payments` |
 
 Money is always sent and stored as integer cents (`amount_cents`). An expense's `split_type` is `equal`, `shares` (each participant's `value` is a weight) or `exact` (each `value` is cents owed, and they must add up to the amount).
 
@@ -69,18 +71,56 @@ tabby/
   errors.py            domain errors -> HTTP status codes
   main.py              builds the FastAPI app and registers each domain's routes
   accounts/            users, login sessions, friends
-  ledger/              Domain A: groups, members, expenses, split rules
+  ledger/              Domain A: groups, members, expenses, split rules, category seed
+  settlement/          Domain B: balances, greedy settle-up plan, recorded payments
+  static/              frontend: index.html, app.js, style.css (served at /)
+tests/                 pytest unit tests (not copied into the Docker image)
 ```
 
 Each domain has `routes.py` (HTTP), `service.py` (business rules), `repository.py` (SQL), `schema.sql` (its tables) and `interface.py`, the only module other domains may import (see ADR-2).
 
 ## Tests and coverage
 
-_To be added._
+Tests cover the business logic of all three domains: the pure functions (split rounding, settle-up algorithm, password hashing) and the services against a fresh temporary SQLite file per test. See ADR-4.
+
+```bash
+python -m pytest --cov=tabby --cov-report=term-missing
+```
+
+Result (2026-10-11): **422 passed, 94% coverage** of the whole `tabby` package. The uncovered lines are HTTP glue (route bodies, the cookie check, the per-request connection).
+
+```
+Name                             Stmts   Miss  Cover
+----------------------------------------------------
+tabby/accounts/interface.py         16      5    69%
+tabby/accounts/models.py            14      0   100%
+tabby/accounts/repository.py        24      0   100%
+tabby/accounts/routes.py            36     16    56%
+tabby/accounts/security.py          25      0   100%
+tabby/accounts/service.py           59      0   100%
+tabby/config.py                     18      0   100%
+tabby/db.py                         24      4    83%
+tabby/errors.py                     12      0   100%
+tabby/ledger/interface.py           20      0   100%
+tabby/ledger/models.py              40      0   100%
+tabby/ledger/repository.py          37      0   100%
+tabby/ledger/routes.py              38     10    74%
+tabby/ledger/seed.py                12      0   100%
+tabby/ledger/service.py             83      0   100%
+tabby/ledger/splits.py              37      0   100%
+tabby/main.py                       32      2    94%
+tabby/settlement/engine.py          42      0   100%
+tabby/settlement/models.py          20      0   100%
+tabby/settlement/repository.py       5      0   100%
+tabby/settlement/routes.py          16      3    81%
+tabby/settlement/service.py         33      0   100%
+----------------------------------------------------
+TOTAL                              643     40    94%
+```
 
 ## Container contract check (§7)
 
-Output of `./container/run.sh .` (first pass, 2026-10-09, after the ledger domain; re-run before submission):
+Output of `./container/run.sh .` (2026-10-11, after all three domains, the seed and the frontend; re-run before submission):
 
 ```
 === SDD Assignment 1 contract check ===
@@ -91,7 +131,7 @@ Repository: /Users/sergehagopian/Desktop/Software Devops Assignment 1
 
 ==> Build from a clean context, no build args
   PASS  image built
-  PASS  image size 52 MB
+  PASS  image size 57 MB
 
 ==> Start on PORT=8000 and reach it from the host
   PASS  HTTP 200 from http://localhost:8000/
@@ -101,7 +141,7 @@ Repository: /Users/sergehagopian/Desktop/Software Devops Assignment 1
 
 ==> Data persists, and a second boot does not re-seed
   PASS  volume at /data persists
-  PASS  row counts unchanged across restart: expense_groups=0 expense_shares=0 expenses=0 friendships=0 group_members=0 sessions=0 users=0 
+  PASS  row counts unchanged across restart: categories=9 expense_groups=0 expense_shares=0 expenses=0 friendships=0 group_members=0 payments=0 sessions=0 users=0 
 
 ==> PORT override is honoured (not hardcoded)
   PASS  HTTP 200 from http://localhost:9123/
