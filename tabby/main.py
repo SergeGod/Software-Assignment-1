@@ -12,6 +12,7 @@ from tabby.errors import TabbyError
 from tabby.ledger.routes import categories_router
 from tabby.ledger.routes import router as ledger_router
 from tabby.ledger.seed import seed_categories
+from tabby.settlement.routes import router as settlement_router
 
 
 def create_app(settings: Settings) -> FastAPI:
@@ -33,4 +34,5 @@ def create_app(settings: Settings) -> FastAPI:
     app.include_router(accounts_router)
     app.include_router(ledger_router)
     app.include_router(categories_router)
+    app.include_router(settlement_router)
     return app
