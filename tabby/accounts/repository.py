@@ -34,7 +34,7 @@ def insert_session(conn: sqlite3.Connection, token_hash: str, user_id: int, days
     conn.execute(
         "INSERT INTO sessions (token_hash, user_id, expires_at) "
         "VALUES (?, ?, datetime('now', ?))",
-        (token_hash, user_id, f"+{days} days"),
+        (token_hash, user_id, f"{days:+d} days"),  # "+30 days" / "-1 days"
     )
 
 
