@@ -7,9 +7,26 @@ from fastapi import APIRouter, Depends
 from tabby.accounts.interface import current_user
 from tabby.db import get_conn
 from tabby.ledger import service
-from tabby.ledger.models import ExpenseIn, ExpenseOut, GroupDetailOut, GroupIn, GroupOut, MemberIn
+from tabby.ledger.models import (
+    CategoryOut,
+    ExpenseIn,
+    ExpenseOut,
+    GroupDetailOut,
+    GroupIn,
+    GroupOut,
+    MemberIn,
+    SpendingOut,
+)
 
 router = APIRouter(prefix="/api/groups", tags=["ledger"])
+categories_router = APIRouter(prefix="/api/categories", tags=["ledger"])
+
+
+@categories_router.get("", response_model=list[CategoryOut])
+def list_categories(
+    user: dict = Depends(current_user), conn: sqlite3.Connection = Depends(get_conn)
+):
+    return service.list_categories(conn)
 
 
 @router.get("", response_model=list[GroupOut])
@@ -73,6 +90,7 @@ def add_expense(
         body.amount_cents,
         body.payer_id,
         body.split_type,
+        body.category_id,
         [(p.user_id, p.value) for p in body.participants],
     )
 
@@ -85,3 +103,10 @@ def delete_expense(
     conn: sqlite3.Connection = Depends(get_conn),
 ):
     service.delete_expense(conn, group_id, user["id"], expense_id)
+
+
+@router.get("/{group_id}/spending", response_model=list[SpendingOut])
+def spending_by_category(
+    group_id: int, user: dict = Depends(current_user), conn: sqlite3.Connection = Depends(get_conn)
+):
+    return service.spending_by_category(conn, group_id, user["id"])

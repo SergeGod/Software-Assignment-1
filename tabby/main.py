@@ -1,17 +1,23 @@
 """Builds the FastAPI application."""
 
+from contextlib import closing
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from tabby.accounts.routes import router as accounts_router
 from tabby.config import Settings
-from tabby.db import init_db
+from tabby.db import connect, init_db
 from tabby.errors import TabbyError
+from tabby.ledger.routes import categories_router
 from tabby.ledger.routes import router as ledger_router
+from tabby.ledger.seed import seed_categories
 
 
 def create_app(settings: Settings) -> FastAPI:
     init_db(settings.db_path)
+    with closing(connect(settings.db_path)) as conn:
+        seed_categories(conn)
 
     app = FastAPI(title="Tabby", description="Split shared expenses and settle up.")
     app.state.settings = settings
@@ -26,4 +32,5 @@ def create_app(settings: Settings) -> FastAPI:
 
     app.include_router(accounts_router)
     app.include_router(ledger_router)
+    app.include_router(categories_router)
     return app

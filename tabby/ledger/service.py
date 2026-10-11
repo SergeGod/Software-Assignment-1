@@ -78,6 +78,7 @@ def add_expense(
     amount_cents: int,
     payer_id: int,
     split_type: str,
+    category_id: int,
     participants: list[tuple[int, int]],
 ) -> dict:
     """participants is a list of (user_id, value) pairs; see splits.compute_shares."""
@@ -86,6 +87,8 @@ def add_expense(
     if not description:
         raise InvalidInput("description must not be empty")
 
+    if not repository.category_exists(conn, category_id):
+        raise InvalidInput("unknown category")
     member_ids = set(repository.list_member_ids(conn, group_id))
     if payer_id not in member_ids:
         raise InvalidInput("the payer must be a member of the group")
@@ -98,9 +101,18 @@ def add_expense(
     shares = compute_shares(split_type, amount_cents, values)
     with conn:
         expense_id = repository.insert_expense(
-            conn, group_id, payer_id, description, amount_cents, split_type, shares
+            conn, group_id, payer_id, description, amount_cents, split_type, category_id, shares
         )
     return next(e for e in repository.list_expenses(conn, group_id) if e["id"] == expense_id)
+
+
+def list_categories(conn: sqlite3.Connection) -> list[dict]:
+    return [dict(row) for row in repository.list_categories(conn)]
+
+
+def spending_by_category(conn: sqlite3.Connection, group_id: int, actor_id: int) -> list[dict]:
+    _require_member(conn, group_id, actor_id)
+    return [dict(row) for row in repository.spending_by_category(conn, group_id)]
 
 
 def list_expenses(conn: sqlite3.Connection, group_id: int, actor_id: int) -> list[dict]:

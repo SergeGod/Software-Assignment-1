@@ -5,6 +5,12 @@
 -- no FOREIGN KEY to users: the two domains must be able to live in separate
 -- databases later, so membership is checked through accounts/interface.py.
 
+-- Reference data, filled from seed_categories.csv when empty (see seed.py).
+CREATE TABLE IF NOT EXISTS categories (
+    id   INTEGER PRIMARY KEY,
+    name TEXT    NOT NULL UNIQUE
+);
+
 CREATE TABLE IF NOT EXISTS expense_groups (
     id         INTEGER PRIMARY KEY,
     name       TEXT    NOT NULL,
@@ -26,6 +32,7 @@ CREATE TABLE IF NOT EXISTS expenses (
     description  TEXT    NOT NULL,
     amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
     split_type   TEXT    NOT NULL CHECK (split_type IN ('equal', 'shares', 'exact')),
+    category_id  INTEGER NOT NULL REFERENCES categories(id),
     created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (group_id, payer_id) REFERENCES group_members(group_id, user_id)
 );

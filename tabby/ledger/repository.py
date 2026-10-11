@@ -3,6 +3,24 @@
 import sqlite3
 
 
+def list_categories(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute("SELECT id, name FROM categories ORDER BY id").fetchall()
+
+
+def category_exists(conn: sqlite3.Connection, category_id: int) -> bool:
+    row = conn.execute("SELECT 1 FROM categories WHERE id = ?", (category_id,)).fetchone()
+    return row is not None
+
+
+def spending_by_category(conn: sqlite3.Connection, group_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT c.id AS category_id, c.name, SUM(e.amount_cents) AS total_cents "
+        "FROM expenses e JOIN categories c ON c.id = e.category_id "
+        "WHERE e.group_id = ? GROUP BY c.id ORDER BY total_cents DESC, c.id",
+        (group_id,),
+    ).fetchall()
+
+
 def insert_group(conn: sqlite3.Connection, name: str) -> int:
     return conn.execute("INSERT INTO expense_groups (name) VALUES (?)", (name,)).lastrowid
 
@@ -55,12 +73,14 @@ def insert_expense(
     description: str,
     amount_cents: int,
     split_type: str,
+    category_id: int,
     shares: dict[int, int],
 ) -> int:
     expense_id = conn.execute(
-        "INSERT INTO expenses (group_id, payer_id, description, amount_cents, split_type) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (group_id, payer_id, description, amount_cents, split_type),
+        "INSERT INTO expenses "
+        "(group_id, payer_id, description, amount_cents, split_type, category_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (group_id, payer_id, description, amount_cents, split_type, category_id),
     ).lastrowid
     conn.executemany(
         "INSERT INTO expense_shares (expense_id, group_id, user_id, share_cents) "
@@ -75,7 +95,7 @@ def list_expenses(conn: sqlite3.Connection, group_id: int) -> list[dict]:
     expenses = [
         dict(row) | {"shares": {}}
         for row in conn.execute(
-            "SELECT id, payer_id, description, amount_cents, split_type, created_at "
+            "SELECT id, payer_id, description, amount_cents, split_type, category_id, created_at "
             "FROM expenses WHERE group_id = ? ORDER BY id DESC",
             (group_id,),
         )
