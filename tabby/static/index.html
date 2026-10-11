@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tabby</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Tabby</h1>
+    <div id="whoami"></div>
+  </header>
+
+  <main>
+    <section id="auth-view" hidden>
+      <div class="card auth">
+        <h2>Log in</h2>
+        <form id="login-form">
+          <label>Username <input name="username" autocomplete="username" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <button>Log in</button>
+        </form>
+        <h2>New here? Sign up</h2>
+        <form id="signup-form">
+          <label>Username <input name="username" autocomplete="username" required minlength="3" maxlength="30"></label>
+          <label>Display name <input name="display_name" required maxlength="50"></label>
+          <label>Password <input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+          <button>Create account</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="app-view" hidden>
+      <aside>
+        <div class="card">
+          <h2>Friends</h2>
+          <ul id="friend-list" class="plain"></ul>
+          <form id="friend-form" class="inline">
+            <input name="username" placeholder="Friend's username" required>
+            <button>Add</button>
+          </form>
+        </div>
+        <div class="card">
+          <h2>Groups</h2>
+          <ul id="group-list" class="plain"></ul>
+          <form id="group-form">
+            <input name="name" placeholder="New group, e.g. Barcelona trip" required maxlength="80">
+            <div id="group-friends" class="checks"></div>
+            <button>Create group</button>
+          </form>
+        </div>
+      </aside>
+      <div id="group-view">
+        <div class="card empty">Pick a group, or create one with your friends.</div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" role="status" hidden></div>
+</body>
+</html>
