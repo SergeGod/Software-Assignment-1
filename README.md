@@ -49,6 +49,18 @@ docker run -p 8000:8000 -v tabby-data:/data tabby
 
 The database is written to `/data/tabby.db` inside the named volume `tabby-data`, so it survives `docker rm`. To use another port: `docker run -e PORT=9000 -p 9000:9000 -v tabby-data:/data tabby`.
 
+## Architecture
+
+![Architecture diagram](docs/architecture.png)
+
+One process serves the frontend and the JSON API. Each domain (`accounts`, `ledger` = Domain A, `settlement` = Domain B) is a package with its own routes, service, repository and tables, and other domains may only call its `interface.py` (ADR-2). **The seam between Domain A and Domain B is `ledger.interface.get_group_ledger()`** (red arrow): settlement never reads ledger tables, so in Assignment 2 that one call becomes `GET /groups/{id}/ledger` on a separate ledger service. Source: [docs/architecture.mmd](docs/architecture.mmd).
+
+## Database schema
+
+![Database diagram](docs/database.png)
+
+All tables live in one SQLite file, colour-coded by the domain that owns them (blue: accounts, green: ledger, orange: settlement). Solid lines are real foreign keys inside a domain; dashed lines are ids that cross a domain boundary and deliberately have no foreign key (ADR-2, ADR-3). Source: [docs/database.mmd](docs/database.mmd).
+
 ## API overview
 
 All endpoints are under `/api` and documented interactively at `/docs`. Everything except sign-up and login needs the `tabby_session` cookie that those two set.

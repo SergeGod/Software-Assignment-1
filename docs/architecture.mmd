@@ -1,0 +1,36 @@
+flowchart TB
+    browser(["Browser: tabby/static (index.html + app.js)"])
+
+    subgraph container["Docker container: one process, python app.py (uvicorn on 0.0.0.0:$PORT)"]
+        main["main.py: create_app()<br/>init_db + seed, routers, /static"]
+
+        subgraph accounts["accounts"]
+            acc["routes → service → repository<br/>sign-up, login sessions, friends"]
+            acc_if{{"interface.py<br/>current_user()<br/>are_friends()<br/>get_users()"}}
+        end
+        subgraph ledger["Domain A: ledger"]
+            led["routes → service → repository<br/>groups, expenses, splits.py"]
+            led_if{{"interface.py<br/>get_group_ledger()<br/>is_member()"}}
+        end
+        subgraph settlement["Domain B: settlement"]
+            set["routes → service → repository<br/>engine.py: balances,<br/>greedy settle-up, payments"]
+        end
+
+        db[("SQLite: $DATA_DIR/tabby.db (volume /data)<br/>accounts: users, sessions, friendships<br/>ledger: categories, expense_groups, group_members,<br/>expenses, expense_shares<br/>settlement: payments")]
+    end
+
+    browser -->|"JSON /api/* + session cookie"| main
+    main --> acc
+    main --> led
+    main --> set
+    acc --> db
+    led --> db
+    set --> db
+    set ==>|"✂ SEAM A↔B"| led_if
+    led -.->|"✂"| acc_if
+    set -.->|"✂"| acc_if
+
+    classDef iface fill:#fff4e5,stroke:#d9731f,stroke-width:2px
+    class acc_if,led_if iface
+    linkStyle 7 stroke:#d62728,stroke-width:3px,color:#d62728
+    linkStyle 8,9 stroke:#d9731f,stroke-width:1.5px

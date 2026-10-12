@@ -1,0 +1,74 @@
+erDiagram
+    direction LR
+    users {
+        INTEGER id PK
+        TEXT username UK
+        TEXT display_name
+        TEXT password_hash "scrypt"
+        TEXT created_at
+    }
+    sessions {
+        TEXT token_hash PK "SHA-256"
+        INTEGER user_id FK
+        TEXT expires_at
+    }
+    friendships {
+        INTEGER user_id PK,FK "smaller id"
+        INTEGER friend_id PK,FK
+        TEXT created_at
+    }
+    categories {
+        INTEGER id PK
+        TEXT name UK "seeded"
+    }
+    expense_groups {
+        INTEGER id PK
+        TEXT name
+        TEXT created_at
+    }
+    group_members {
+        INTEGER group_id PK,FK
+        INTEGER user_id PK "no FK"
+    }
+    expenses {
+        INTEGER id PK
+        INTEGER group_id FK
+        INTEGER payer_id FK
+        TEXT description
+        INTEGER amount_cents ">0"
+        TEXT split_type
+        INTEGER category_id FK
+        TEXT created_at
+    }
+    expense_shares {
+        INTEGER expense_id PK,FK
+        INTEGER group_id FK
+        INTEGER user_id PK,FK
+        INTEGER share_cents ">=0"
+    }
+    payments {
+        INTEGER id PK
+        INTEGER group_id "no FK"
+        INTEGER from_user_id "no FK"
+        INTEGER to_user_id "no FK"
+        INTEGER amount_cents ">0"
+        TEXT created_at
+    }
+
+    users ||--o{ sessions : ""
+    users ||--o{ friendships : ""
+    expense_groups ||--o{ group_members : ""
+    categories ||--o{ expenses : ""
+    group_members ||--o{ expenses : "payer"
+    group_members ||--o{ expense_shares : "member"
+    expenses ||--|{ expense_shares : ""
+    users ||..o{ group_members : "cross-domain"
+    expense_groups ||..o{ payments : "cross-domain"
+    users ||..o{ payments : "cross-domain"
+
+    classDef accounts fill:#e3f2fd,stroke:#1565c0
+    classDef ledger fill:#e8f5e9,stroke:#2e7d32
+    classDef settlement fill:#fff3e0,stroke:#ef6c00
+    class users,sessions,friendships accounts
+    class categories,expense_groups,group_members,expenses,expense_shares ledger
+    class payments settlement
