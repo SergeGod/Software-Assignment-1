@@ -173,3 +173,4 @@ Paste this output into your README as the §7 evidence.
 - [ADR.md](ADR.md): architecture decision log
 - [AI_USAGE.md](AI_USAGE.md): AI usage log
 - [docs/architecture.mmd](docs/architecture.mmd), [docs/database.mmd](docs/database.mmd): diagram sources
+- [docs/Tabby_Report.docx](docs/Tabby_Report.docx): the 4-5 page report
