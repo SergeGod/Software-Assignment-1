@@ -99,7 +99,7 @@ Tests cover the business logic of all three domains: the pure functions (split r
 python -m pytest --cov=tabby --cov-report=term-missing
 ```
 
-Result (2026-10-11): **422 passed, 94% coverage** of the whole `tabby` package. The uncovered lines are HTTP glue (route bodies, the cookie check, the per-request connection).
+Result (final code): **422 passed, 94% coverage** of the whole `tabby` package. The uncovered lines are HTTP glue (route bodies, the cookie check, the per-request connection).
 
 ```
 Name                             Stmts   Miss  Cover
@@ -132,7 +132,13 @@ TOTAL                              643     40    94%
 
 ## Container contract check (§7)
 
-Output of `./container/run.sh .` (2026-10-11, after all three domains, the seed and the frontend; re-run before submission):
+`run.sh` is the checker provided in the course repository ([ami232/sdd-assignment-1](https://github.com/ami232/sdd-assignment-1), folder `container/`). With Docker running:
+
+```bash
+./container/run.sh /path/to/this/repo
+```
+
+Final run, 2026-10-12, on the submitted code:
 
 ```
 === SDD Assignment 1 contract check ===
@@ -166,3 +172,4 @@ Paste this output into your README as the §7 evidence.
 
 - [ADR.md](ADR.md): architecture decision log
 - [AI_USAGE.md](AI_USAGE.md): AI usage log
+- [docs/architecture.mmd](docs/architecture.mmd), [docs/database.mmd](docs/database.mmd): diagram sources
