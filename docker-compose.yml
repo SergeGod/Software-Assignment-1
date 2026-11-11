@@ -1,0 +1,32 @@
+# Runs the whole system locally: docker compose up --build, then open
+# http://localhost:8080. Each service has its own volume and its own database.
+services:
+  ledger:
+    build: services/ledger
+    volumes:
+      - ledger-data:/data
+
+  settlement:
+    build: services/settlement
+    environment:
+      LEDGER_URL: http://ledger:8000
+    volumes:
+      - settlement-data:/data
+    depends_on:
+      ledger:
+        condition: service_healthy
+
+  ui:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./ui:/usr/share/nginx/html:ro
+      - ./ui/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - ledger
+      - settlement
+
+volumes:
+  ledger-data:
+  settlement-data:
