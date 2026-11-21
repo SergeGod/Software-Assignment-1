@@ -1,127 +1,135 @@
 # Tabby
 
-Tabby helps flatmates and trip groups log shared expenses and settle up with the fewest possible transfers. You sign up once, stay logged in, add your friends, put them in groups (a flat, a trip) and record who paid for what.
+Tabby helps flatmates and trip groups log shared expenses and settle up with the fewest possible transfers. You sign up once, add your friends, put them in groups (a flat, a trip) and record who paid for what.
 
-It is two Python services (FastAPI + uvicorn), each with its own SQLite database, plus a static frontend. It started as the single-process app of SDD Individual Assignment 1 and was split along its domain seam for Assignment 2 (ADR-6).
+It started as the single-process app of SDD Individual Assignment 1 and was split along its domain seam for Assignment 2 (ADR-6): two Python services (FastAPI + uvicorn), each with its own SQL Server database, and a static UI that calls both.
 
-| Service | Folder | Owns | Image |
+| Part | Folder | Owns | Database |
 |---|---|---|---|
-| `ledger` | [services/ledger](services/ledger) | accounts (users, sessions, friends) and Domain A (groups, expenses) | `ghcr.io/sergegod/tabby-ledger:<commit sha>` |
-| `settlement` | [services/settlement](services/settlement) | Domain B (balances, settle-up plan, payments) | `ghcr.io/sergegod/tabby-settlement:<commit sha>` |
-| `ui` | [ui](ui) | static HTML/JS/CSS | none (served by nginx locally) |
+| `ledger` service | [services/ledger](services/ledger) | accounts (users, sessions, friends) and Domain A (groups, members, expenses, categories) | `ledger` |
+| `settlement` service | [services/settlement](services/settlement) | Domain B (payments; computes balances and the settle-up plan) | `settlement` |
+| UI | [ui](ui) | static HTML/JS/CSS; [config.js](ui/config.js) holds the two service URLs | none |
 
-## Run the whole system
+**The seam:** settlement calls `GET {LEDGER_URL}/api/groups/{id}/ledger` on the ledger service, forwarding the user's bearer token ([ledger_client.py](services/settlement/tabby/ledger_client.py)). The ledger answers with the members, every expense's per-member shares and who the caller is; settlement adds its own payments and computes the balances. If ledger is down, settlement answers `503` with a clear message and stays healthy; the UI keeps showing expenses and says balances are unavailable.
 
-Requires Docker.
+Live URL: *added after the first deployment.*
+
+## Run the whole system locally
+
+Requires Docker (on Apple Silicon, enable *Use Rosetta for x86_64/amd64 emulation* in Docker Desktop: SQL Server has no arm64 image).
 
 ```bash
+cp .env.example .env          # local passwords; change them if you like
 docker compose up --build
 ```
 
-Then open <http://localhost:8080/>, sign up, and add a friend by username (sign up a second account in a private window to try it alone). nginx serves the frontend and forwards `/api/groups/{id}/settlement` and `/api/groups/{id}/payments` to the settlement service and every other `/api` path to the ledger service ([ui/nginx.conf](ui/nginx.conf)).
+Open <http://localhost:8080/>, sign up, and add a friend by username (sign up a second account in a private window to try it alone). The first start takes about a minute: SQL Server must be healthy, then `db-init` creates the two databases and logins ([db/init.sql](db/init.sql)), then each service applies its migrations and starts.
 
-No setup step is needed: on first start each service creates its data directory, its SQLite file and any missing tables.
+| Container | URL | Notes |
+|---|---|---|
+| `ui` (nginx:alpine, folder mounted) | <http://localhost:8080> | static files only |
+| `ledger` | <http://localhost:8001/docs> | API docs |
+| `settlement` | <http://localhost:8002/docs> | API docs |
+| `sqlserver` | `localhost:1433` | one server, two databases |
+
+Try the partial failure: `docker compose stop settlement` (the group page shows expenses and "Balances and settle-up are unavailable right now") or `docker compose stop ledger` (settlement answers 503 and its `/health` stays 200). `docker compose start <service>` brings it back. `docker compose down -v` deletes all local data.
 
 ## Run one service without Docker
 
-Requires Python 3.12 or newer.
+SQL Server must be running (`docker compose up -d sqlserver db-init`). Then, for example for ledger:
 
 ```bash
-cd services/ledger            # or services/settlement
-python3 -m venv .venv
-source .venv/bin/activate
+cd services/ledger
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
-python app.py
+set -a && source ../../.env && set +a
+DATABASE_URL="mssql://ledger_user:${LEDGER_DB_PASSWORD}@localhost:1433/ledger" PORT=8001 python app.py
 ```
 
-The interactive API docs of that service are at <http://localhost:8000/docs>.
+For settlement use `settlement_user`, `SETTLEMENT_DB_PASSWORD`, database `settlement`, `PORT=8002` and `LEDGER_URL=http://localhost:8001`.
 
 ## Configuration
 
-Everything is configured through environment variables. None are required.
+Everything is configured through environment variables ([system.yaml](system.yaml) lists them per service).
 
 | Variable | Service | Default | Purpose |
 |---|---|---|---|
-| `PORT` | both | `8000` | Port the HTTP server listens on. The server always binds `0.0.0.0`. |
-| `DATA_DIR` | both | `./data` (next to `app.py`) | Directory that holds the SQLite file. The containers set it to `/data`. |
-| `SESSION_DAYS` | ledger | `30` | How long a login is remembered (lifetime of the session cookie and its database row). |
-| `LEDGER_URL` | settlement | `http://localhost:8001` | Base URL of the ledger service. docker compose sets it to `http://ledger:8000`. |
+| `DATABASE_URL` | both | none (secret, required) | `mssql://user:password@host:1433/database` of the service's own database |
+| `PORT` | both | `8000` | Port the HTTP server listens on (always `0.0.0.0`) |
+| `CORS_ORIGINS` | both | empty (no cross-origin calls) | The UI's origin, e.g. `http://localhost:8080`; comma-separated |
+| `GIT_SHA` | both | `dev` | Commit the image was built from (Docker build arg), reported by `/health` |
+| `SESSION_DAYS` | ledger | `30` | How long a session token is valid |
+| `LEDGER_URL` | settlement | `http://localhost:8001` | Base URL of the ledger service (compose: `http://ledger:8000`) |
+| `LEDGER_TIMEOUT_S` | settlement | `5` | Timeout of every call to the ledger service |
 
-## Database
+## Database and migrations
 
-- Each service has its own SQLite file and never opens the other's: `$DATA_DIR/tabby.db` for ledger (accounts and ledger tables) and `$DATA_DIR/settlement.db` for settlement (`payments`).
-- Schema: one `schema.sql` per domain ([accounts](services/ledger/tabby/accounts/schema.sql), [ledger](services/ledger/tabby/ledger/schema.sql), [settlement](services/settlement/tabby/settlement/schema.sql)), applied on every boot. They only use `CREATE ... IF NOT EXISTS`, so existing tables and rows are never dropped or changed.
-- The `.db` files are never committed; they are created at runtime.
-- Seed data: the starter expense categories live in [`seed_categories.csv`](services/ledger/tabby/ledger/seed_categories.csv) and are inserted on boot only when the `categories` table is empty, so restarts never duplicate them.
+- Each service has its own database and login: `ledger_user` can only use `ledger`, `settlement_user` only `settlement`. Ids that cross the seam (`payments.group_id`, user ids) have no foreign key (ADR-7).
+- The schema is defined by numbered files in `services/<name>/migrations/` (`001_init.sql`, ...). On startup, before accepting requests, each service applies the files not yet recorded in its `schema_migrations` table, each in one transaction, and logs `applying migration ...`. A second start applies nothing. Applied files are never edited; changes go in a new file.
+- Seed data: the starter categories ([seed_categories.csv](services/ledger/tabby/ledger/seed_categories.csv)) are inserted only when the `categories` table is empty.
 
-## CI and images
+## Health and logs
 
-[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and pull request:
+`GET /health` on each service writes and reads a row in its own database and returns `200 {"status": "ok", "db": "ok", "version": "<git sha>"}`, or `503` when it cannot. It does not depend on the other service. Every request is logged to stdout as one line: `GET /api/groups/1/settlement 200 24ms`.
 
-1. `test`: for each service, `ruff check .` and `pytest` (fails under 70% coverage).
-2. `images`: only if `test` passed, builds the Docker image of each service. On `main` it also pushes the image to GHCR, tagged with the commit SHA and never `latest`, so a tag always names exactly one build.
+## Tests and coverage
+
+Each service has unit tests (split rounding, settle-up algorithm, password hashing, services and HTTP routes) that run against a real SQL Server database, created fresh for each run from the migrations. The cross-seam integration test runs the real settlement app with the ledger replaced by an HTTP stub that is checked against ledger's `openapi.json` ([test_api.py](services/settlement/tests/test_api.py)); the same flow also runs against the real compose stack ([tests/e2e/cross_seam.py](tests/e2e/cross_seam.py)). See ADR-9.
 
 ```bash
-docker run --rm -p 8000:8000 ghcr.io/sergegod/tabby-ledger:<commit sha>
+docker compose up -d sqlserver
+set -a && source .env && set +a
+cd services/ledger && TEST_DATABASE_URL="mssql://sa:${SA_PASSWORD}@localhost:1433/ledger_test" pytest --cov=tabby
+cd services/settlement && TEST_DATABASE_URL="mssql://sa:${SA_PASSWORD}@localhost:1433/settlement_test" pytest --cov=tabby
 ```
 
-## Architecture
+Result on 2026-11-21: ledger **371 passed, 98%** coverage; settlement **91 passed, 96%**.
 
-![Architecture diagram](docs/architecture.png)
+End to end, with the stack running: `python3 tests/e2e/cross_seam.py flow`, then `docker compose stop ledger` and `python3 tests/e2e/cross_seam.py ledger-down`.
 
-The diagram shows the three domains as drawn for Assignment 1, when they ran in one process. The red arrow, **the seam between Domain A and Domain B**, is now a network call: the settlement service asks the ledger service `GET /api/groups/{id}/ledger` ([ledger_client.py](services/settlement/tabby/ledger_client.py)) and forwards the user's session cookie, so the ledger service decides who the caller is and what they may see. Settlement never reads ledger tables. Source: [docs/architecture.mmd](docs/architecture.mmd).
+## CI/CD
 
-## Database schema
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and pull request: `ruff` and `pytest` per service against a throwaway SQL Server container with a random password (fails under 70% coverage), validation of both OpenAPI documents, a Docker build of each image, and the cross-seam test on the compose stack. It never connects to Azure.
 
-![Database diagram](docs/database.png)
+## API
 
-Tables are colour-coded by the domain that owns them (blue: accounts, green: ledger, orange: settlement). Blue and green live in the ledger service's database, orange in the settlement service's. Solid lines are real foreign keys inside a domain; dashed lines are ids that cross a domain boundary and deliberately have no foreign key (ADR-2, ADR-3). Source: [docs/database.mmd](docs/database.mmd).
+Each service publishes its OpenAPI document at `/docs` and commits it as `openapi.json` ([ledger](services/ledger/openapi.json), [settlement](services/settlement/openapi.json)); a test fails if the file and the code disagree (`python -m tabby.openapi_export` regenerates it). Everything except `/health`, sign-up and login needs `Authorization: Bearer <token>`, where the token comes from sign-up or login.
 
-## API overview
-
-All endpoints are under `/api` and documented interactively at `/docs`. Everything except sign-up and login needs the `tabby_session` cookie that those two set.
-
-| Domain | Endpoints |
+| Service | Endpoints |
 |---|---|
-| Accounts | `POST /api/signup`, `POST /api/login`, `POST /api/logout`, `GET /api/me`, `GET/POST /api/friends` |
-| Ledger (Domain A) | `GET /api/groups/{id}/ledger` (called by settlement), `GET /api/categories`, `GET/POST /api/groups`, `GET /api/groups/{id}`, `POST /api/groups/{id}/members`, `DELETE /api/groups/{id}/members/{user_id}`, `GET/POST /api/groups/{id}/expenses`, `DELETE /api/groups/{id}/expenses/{expense_id}`, `GET /api/groups/{id}/spending` |
-| Settlement (Domain B) | `GET /api/groups/{id}/settlement` (balances + suggested transfers), `GET/POST /api/groups/{id}/payments` |
+| ledger: accounts | `POST /api/signup`, `POST /api/login`, `POST /api/logout`, `GET /api/me`, `GET/POST /api/friends` |
+| ledger: Domain A | `GET /api/groups/{id}/ledger` (called by settlement), `GET /api/categories`, `GET/POST /api/groups`, `GET /api/groups/{id}`, `POST /api/groups/{id}/members`, `DELETE /api/groups/{id}/members/{user_id}`, `GET/POST /api/groups/{id}/expenses`, `DELETE /api/groups/{id}/expenses/{expense_id}`, `GET /api/groups/{id}/spending` |
+| settlement: Domain B | `GET /api/groups/{id}/settlement` (balances + suggested transfers), `GET/POST /api/groups/{id}/payments` |
+| both | `GET /health` |
 
-Money is always sent and stored as integer cents (`amount_cents`). An expense's `split_type` is `equal`, `shares` (each participant's `value` is a weight) or `exact` (each `value` is cents owed, and they must add up to the amount).
+Money is always integer cents (`amount_cents`). An expense's `split_type` is `equal`, `shares` (each participant's `value` is a weight) or `exact` (each `value` is cents owed, adding up to the amount).
 
 ## Project structure
 
 ```
-.github/workflows/ci.yml   test and images jobs
-docker-compose.yml         ledger + settlement + nginx for local runs
+.github/workflows/ci.yml      lint, tests, contracts, image builds, e2e on compose
+docker-compose.yml            sqlserver + db-init + ledger + settlement + ui (nginx)
+db/init.sql                   local databases and logins (idempotent)
 services/
   ledger/
-    Dockerfile, app.py, requirements*.txt
-    tabby/accounts/        users, login sessions, friends
-    tabby/ledger/          Domain A: groups, members, expenses, split rules, category seed
+    Dockerfile, app.py, requirements*.txt, openapi.json
+    migrations/               001_init.sql, ...
+    tabby/accounts/           users, sessions, friends
+    tabby/ledger/             Domain A: groups, members, expenses, split rules, category seed
+    tabby/db.py               connections, retries, migration runner
     tests/
   settlement/
-    Dockerfile, app.py, requirements*.txt
-    tabby/ledger_client.py HTTP client for the ledger service (the seam)
-    tabby/settlement/      Domain B: balances, greedy settle-up plan, recorded payments
+    Dockerfile, app.py, requirements*.txt, openapi.json
+    migrations/
+    tabby/ledger_client.py    HTTP client for the ledger service (the seam)
+    tabby/settlement/         Domain B: balances, greedy settle-up plan, payments
     tests/
-ui/                        frontend: index.html, app.js, style.css, nginx.conf
-```
-
-Each domain has `routes.py` (HTTP), `service.py` (business rules), `repository.py` (SQL) and `schema.sql` (its tables).
-
-## Tests and coverage
-
-Each service has its own test suite: pure functions (split rounding, settle-up algorithm, password hashing), services against a fresh temporary SQLite file per test, and the HTTP API through FastAPI's `TestClient`. The settlement tests never start a ledger service: they use a fake one (see ADR-4 and ADR-6).
-
-```bash
-cd services/ledger && pytest --cov=tabby        # 361 passed, 97% coverage
-cd services/settlement && pytest --cov=tabby    # 75 passed, 99% coverage
+tests/e2e/cross_seam.py       end-to-end test against the compose stack
+ui/                           index.html, app.js, style.css, config.js
 ```
 
 ## Project docs
 
 - [ADR.md](ADR.md): architecture decision log
 - [AI_USAGE.md](AI_USAGE.md): AI usage log
-- [docs/architecture.mmd](docs/architecture.mmd), [docs/database.mmd](docs/database.mmd): diagram sources
-- [docs/Tabby_Report.docx](docs/Tabby_Report.docx): the 4-5 page report
+- [docs/](docs): diagrams and reports
