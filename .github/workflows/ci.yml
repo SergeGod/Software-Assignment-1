@@ -1,14 +1,24 @@
 name: CI
 
+# Every push and pull request: lint, test against a real SQL Server with a
+# coverage gate, validate the API documents, build both images and run the
+# cross-seam test on the compose stack. CI never touches Azure.
+# On main, cd.yml calls this workflow first and only deploys if it passes.
 on:
   push:
+    branches-ignore: [main]   # pushes to main run through cd.yml, which calls this
   pull_request:
-  workflow_call:            # lets a deploy workflow reuse this one
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   test:
+    name: test (${{ matrix.service }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         service: [ledger, settlement]
     defaults:
@@ -22,34 +32,74 @@ jobs:
           cache: pip
           cache-dependency-path: services/${{ matrix.service }}/requirements*.txt
       - run: pip install -r requirements.txt -r requirements-dev.txt
-      - run: ruff check .
-      - run: pytest --cov=tabby --cov-fail-under=70
+      - name: Lint
+        run: ruff check .
+      - name: Start a throwaway SQL Server for the tests
+        run: |
+          # A random password for each run, so no password is stored anywhere.
+          SA_PASSWORD="Ci_$(openssl rand -hex 12)"
+          echo "::add-mask::$SA_PASSWORD"
+          docker run -d --name mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD="$SA_PASSWORD" \
+            -p 1433:1433 mcr.microsoft.com/mssql/server:2022-latest
+          for i in $(seq 1 60); do
+            if docker exec mssql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa \
+                 -P "$SA_PASSWORD" -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "SQL Server is ready"; break
+            fi
+            sleep 2
+          done
+          echo "TEST_DATABASE_URL=mssql://sa:${SA_PASSWORD}@localhost:1433/${{ matrix.service }}_test" >> "$GITHUB_ENV"
+      - name: Test with coverage (fails under 70%)
+        run: pytest --cov=tabby --cov-report=term-missing --cov-fail-under=70
+
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install openapi-spec-validator==0.9.0 check-jsonschema==0.39.0
+      - name: Each OpenAPI document is valid OpenAPI
+        run: openapi-spec-validator services/ledger/openapi.json services/settlement/openapi.json
 
   images:
-    needs: test             # no image is built from a commit whose tests failed
+    name: image (${{ matrix.service }})
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write       # lets GITHUB_TOKEN push to ghcr.io
     strategy:
       matrix:
         service: [ledger, settlement]
     steps:
       - uses: actions/checkout@v4
-      # Image names must be lowercase, and the owner name (SergeGod) is not.
-      - run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        if: github.ref == 'refs/heads/main'
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      # Every push and pull request builds; only main publishes, tagged with the commit SHA.
+      # Build only; cd.yml pushes on main. A failed build fails the pipeline.
       - uses: docker/build-push-action@v6
         with:
           context: services/${{ matrix.service }}
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ghcr.io/${{ env.OWNER }}/tabby-${{ matrix.service }}:${{ github.sha }}
+          push: false
+          build-args: GIT_SHA=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  e2e:
+    name: cross-seam test on the compose stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Local passwords for this run only
+        run: |
+          for name in SA_PASSWORD LEDGER_DB_PASSWORD SETTLEMENT_DB_PASSWORD; do
+            value="Ci_$(openssl rand -hex 12)"
+            echo "::add-mask::$value"
+            echo "$name=$value" >> .env
+          done
+      - run: docker compose up -d --build
+      - name: Ledger and settlement work together
+        run: python3 tests/e2e/cross_seam.py flow
+      - name: Settlement degrades when ledger is down
+        run: |
+          docker compose stop ledger
+          python3 tests/e2e/cross_seam.py ledger-down
+      - name: Service logs
+        if: always()
+        run: docker compose logs ledger settlement db-init
