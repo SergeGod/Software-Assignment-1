@@ -1,28 +1,44 @@
-// Tabby frontend: plain JavaScript that talks to the JSON API under /api.
-// The browser sends the tabby_session cookie automatically on every request.
+// Tabby frontend: plain JavaScript that calls the two services directly.
+// ledger (accounts, groups, expenses) and settlement (balances, payments) live
+// at the URLs in config.js. After login the session token is kept in
+// localStorage and sent as "Authorization: Bearer <token>" to both services.
+
+const { ledgerUrl, settlementUrl } = window.TABBY_CONFIG;
+const TOKEN_KEY = "tabby_token";
 
 const state = {
   me: null,
   friends: [],
   groups: [],
   categories: [],
-  group: null, // the open group: { id, name, members, expenses, settlement, payments, spending }
+  group: null, // the open group: { id, name, members, expenses, spending, settlement, payments, settlementError }
 };
 
 // ---------- helpers ----------
 
-async function api(method, path, body) {
+async function call(baseUrl, serviceName, method, path, body) {
   const options = { method, headers: {} };
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) options.headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  const res = await fetch(`/api${path}`, options);
+  let res;
+  try {
+    res = await fetch(`${baseUrl}/api${path}`, options);
+  } catch {
+    // Network error, CORS refusal or the service being down.
+    throw new Error(`The ${serviceName} service is not reachable. Try again in a minute.`);
+  }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(errorMessage(data, res.status));
   return data;
 }
+
+const api = (method, path, body) => call(ledgerUrl, "ledger", method, path, body);
+const settlementApi = (method, path, body) => call(settlementUrl, "settlement", method, path, body);
 
 function errorMessage(data, status) {
   if (data && typeof data.detail === "string") return data.detail;
@@ -79,13 +95,23 @@ function formData(form) {
 // ---------- loading ----------
 
 async function start() {
-  try {
-    state.me = await api("GET", "/me");
-  } catch {
+  if (!localStorage.getItem(TOKEN_KEY)) {
     showAuth();
     return;
   }
+  try {
+    state.me = await api("GET", "/me");
+  } catch (err) {
+    showAuth();
+    if (!err.message.includes("log in")) toast(err.message, true);
+    return;
+  }
   await loadHome();
+}
+
+function saveSession(session) {
+  localStorage.setItem(TOKEN_KEY, session.token);
+  state.me = session.user;
 }
 
 function showAuth() {
@@ -110,14 +136,25 @@ async function loadHome() {
 
 async function openGroup(groupId) {
   const base = `/groups/${groupId}`;
-  const [detail, expenses, settlement, payments, spending] = await Promise.all([
+  const [detail, expenses, spending] = await Promise.all([
     api("GET", base),
     api("GET", `${base}/expenses`),
-    api("GET", `${base}/settlement`),
-    api("GET", `${base}/payments`),
     api("GET", `${base}/spending`),
   ]);
-  state.group = { ...detail, expenses, settlement, payments, spending };
+  // Settlement is the other service: if it is down, the ledger part of the
+  // group still works and the balances card explains what is missing.
+  let settlement = null;
+  let payments = [];
+  let settlementError = null;
+  try {
+    [settlement, payments] = await Promise.all([
+      settlementApi("GET", `${base}/settlement`),
+      settlementApi("GET", `${base}/payments`),
+    ]);
+  } catch (err) {
+    settlementError = err.message;
+  }
+  state.group = { ...detail, expenses, spending, settlement, payments, settlementError };
   renderGroups();
   renderGroup();
 }
@@ -179,6 +216,14 @@ function renderGroup() {
 }
 
 function settleCard() {
+  if (state.group.settlementError) {
+    return el("div", { class: "card" },
+      el("h2", {}, "Balances"),
+      el("p", { class: "unavailable" }, "Balances and settle-up are unavailable right now."),
+      el("p", { class: "muted" }, state.group.settlementError),
+      el("button", { class: "secondary small", onclick: () => attempt(() => openGroup(state.group.id)) }, "Retry"),
+    );
+  }
   const { balances, transfers } = state.group.settlement;
   return el("div", { class: "card" },
     el("h2", {}, "Balances"),
@@ -289,7 +334,7 @@ function membersCard() {
 async function logIn(event) {
   event.preventDefault();
   await attempt(async () => {
-    state.me = await api("POST", "/login", formData(event.target));
+    saveSession(await api("POST", "/login", formData(event.target)));
     event.target.reset();
     await loadHome();
   });
@@ -298,7 +343,7 @@ async function logIn(event) {
 async function signUp(event) {
   event.preventDefault();
   await attempt(async () => {
-    state.me = await api("POST", "/signup", formData(event.target));
+    saveSession(await api("POST", "/signup", formData(event.target)));
     event.target.reset();
     await loadHome();
   }, "Welcome to Tabby!");
@@ -307,6 +352,7 @@ async function signUp(event) {
 async function logOut() {
   await attempt(async () => {
     await api("POST", "/logout");
+    localStorage.removeItem(TOKEN_KEY);
     state.group = null;
     $("group-view").replaceChildren(el("div", { class: "card empty" }, "Pick a group, or create one with your friends."));
     showAuth();
@@ -374,7 +420,7 @@ async function deleteExpense(expense) {
 
 async function recordPayment(transfer) {
   await attempt(async () => {
-    await api("POST", `/groups/${state.group.id}/payments`, {
+    await settlementApi("POST", `/groups/${state.group.id}/payments`, {
       to_user_id: transfer.to_user_id,
       amount_cents: transfer.amount_cents,
     });

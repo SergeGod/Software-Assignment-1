@@ -98,3 +98,4 @@ ul.plain li:last-child { border-bottom: 0; }
   max-width: calc(100% - 2rem);
 }
 #toast.error { background: var(--owes); color: #fff; }
+.unavailable { color: var(--owes); font-weight: 600; margin: .25rem 0; }
