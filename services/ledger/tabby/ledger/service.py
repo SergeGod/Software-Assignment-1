@@ -1,15 +1,16 @@
 """Business rules for groups, members and expenses."""
 
-import sqlite3
 from dataclasses import asdict
 
+from tabby import db
 from tabby.accounts import interface as accounts
+from tabby.db import Connection
 from tabby.errors import Conflict, Forbidden, InvalidInput, NotFound
 from tabby.ledger import interface, repository
 from tabby.ledger.splits import compute_shares
 
 
-def _require_member(conn: sqlite3.Connection, group_id: int, user_id: int) -> sqlite3.Row:
+def _require_member(conn: Connection, group_id: int, user_id: int) -> dict:
     group = repository.get_group(conn, group_id)
     if group is None:
         raise NotFound("group not found")
@@ -18,13 +19,13 @@ def _require_member(conn: sqlite3.Connection, group_id: int, user_id: int) -> sq
     return group
 
 
-def _require_friend(conn: sqlite3.Connection, user_id: int, other_id: int) -> None:
+def _require_friend(conn: Connection, user_id: int, other_id: int) -> None:
     if not accounts.are_friends(conn, user_id, other_id):
         raise InvalidInput(f"user {other_id} is not one of your friends")
 
 
 def create_group(
-    conn: sqlite3.Connection, creator_id: int, name: str, member_ids: list[int]
+    conn: Connection, creator_id: int, name: str, member_ids: list[int]
 ) -> dict:
     name = name.strip()
     if not name:
@@ -39,17 +40,17 @@ def create_group(
     return get_group(conn, group_id, creator_id)
 
 
-def list_groups(conn: sqlite3.Connection, user_id: int) -> list[dict]:
+def list_groups(conn: Connection, user_id: int) -> list[dict]:
     return [dict(row) for row in repository.list_groups_for_user(conn, user_id)]
 
 
-def get_group(conn: sqlite3.Connection, group_id: int, user_id: int) -> dict:
+def get_group(conn: Connection, group_id: int, user_id: int) -> dict:
     group = _require_member(conn, group_id, user_id)
     members = accounts.get_users(conn, repository.list_member_ids(conn, group_id))
     return dict(group) | {"members": members}
 
 
-def add_member(conn: sqlite3.Connection, group_id: int, actor_id: int, user_id: int) -> dict:
+def add_member(conn: Connection, group_id: int, actor_id: int, user_id: int) -> dict:
     _require_member(conn, group_id, actor_id)
     if repository.is_member(conn, group_id, user_id):
         raise Conflict("already a member of this group")
@@ -59,20 +60,20 @@ def add_member(conn: sqlite3.Connection, group_id: int, actor_id: int, user_id: 
     return get_group(conn, group_id, actor_id)
 
 
-def remove_member(conn: sqlite3.Connection, group_id: int, actor_id: int, user_id: int) -> None:
+def remove_member(conn: Connection, group_id: int, actor_id: int, user_id: int) -> None:
     _require_member(conn, group_id, actor_id)
     if not repository.is_member(conn, group_id, user_id):
         raise NotFound("that user is not in this group")
     try:
         with conn:
             repository.delete_member(conn, group_id, user_id)
-    except sqlite3.IntegrityError:
+    except db.IntegrityError:
         # The composite foreign keys in schema.sql refuse the delete.
         raise Conflict("this member already has expenses in the group") from None
 
 
 def add_expense(
-    conn: sqlite3.Connection,
+    conn: Connection,
     group_id: int,
     actor_id: int,
     description: str,
@@ -107,21 +108,21 @@ def add_expense(
     return next(e for e in repository.list_expenses(conn, group_id) if e["id"] == expense_id)
 
 
-def list_categories(conn: sqlite3.Connection) -> list[dict]:
+def list_categories(conn: Connection) -> list[dict]:
     return [dict(row) for row in repository.list_categories(conn)]
 
 
-def spending_by_category(conn: sqlite3.Connection, group_id: int, actor_id: int) -> list[dict]:
+def spending_by_category(conn: Connection, group_id: int, actor_id: int) -> list[dict]:
     _require_member(conn, group_id, actor_id)
     return [dict(row) for row in repository.spending_by_category(conn, group_id)]
 
 
-def list_expenses(conn: sqlite3.Connection, group_id: int, actor_id: int) -> list[dict]:
+def list_expenses(conn: Connection, group_id: int, actor_id: int) -> list[dict]:
     _require_member(conn, group_id, actor_id)
     return repository.list_expenses(conn, group_id)
 
 
-def delete_expense(conn: sqlite3.Connection, group_id: int, actor_id: int, expense_id: int) -> None:
+def delete_expense(conn: Connection, group_id: int, actor_id: int, expense_id: int) -> None:
     _require_member(conn, group_id, actor_id)
     with conn:
         deleted = repository.delete_expense(conn, group_id, expense_id)
@@ -129,7 +130,11 @@ def delete_expense(conn: sqlite3.Connection, group_id: int, actor_id: int, expen
         raise NotFound("expense not found")
 
 
-def get_group_ledger(conn: sqlite3.Connection, group_id: int, actor_id: int) -> dict:
-    """What the settlement service needs: members, and who paid and owes what."""
+def get_group_ledger(conn: Connection, group_id: int, actor_id: int) -> dict:
+    """What the settlement service needs: members, who paid and owes what, and who asked.
+
+    viewer_id tells settlement which user the forwarded token belongs to, so it
+    needs one call to the ledger service per request instead of two.
+    """
     _require_member(conn, group_id, actor_id)
-    return asdict(interface.get_group_ledger(conn, group_id))
+    return asdict(interface.get_group_ledger(conn, group_id)) | {"viewer_id": actor_id}

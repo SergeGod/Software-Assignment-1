@@ -5,9 +5,9 @@ Settlement is now its own service: it reads get_group_ledger() through
 GET /api/groups/{id}/ledger (see routes.py), never through the database.
 """
 
-import sqlite3
 from dataclasses import dataclass
 
+from tabby.db import Connection
 from tabby.ledger import repository
 
 
@@ -26,11 +26,11 @@ class GroupLedger:
     expenses: list[LedgerExpense]
 
 
-def is_member(conn: sqlite3.Connection, group_id: int, user_id: int) -> bool:
+def is_member(conn: Connection, group_id: int, user_id: int) -> bool:
     return repository.is_member(conn, group_id, user_id)
 
 
-def get_group_ledger(conn: sqlite3.Connection, group_id: int) -> GroupLedger | None:
+def get_group_ledger(conn: Connection, group_id: int) -> GroupLedger | None:
     """Plain data: who is in the group, who paid what, and who owes what."""
     if repository.get_group(conn, group_id) is None:
         return None

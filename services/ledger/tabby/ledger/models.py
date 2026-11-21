@@ -1,5 +1,6 @@
 """Request and response shapes for the ledger API (validated by Pydantic)."""
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -30,7 +31,7 @@ class MemberIn(BaseModel):
 class GroupOut(BaseModel):
     id: int
     name: str
-    created_at: str
+    created_at: datetime
 
 
 class GroupDetailOut(GroupOut):
@@ -59,7 +60,7 @@ class ExpenseOut(BaseModel):
     amount_cents: int
     split_type: str
     category_id: int
-    created_at: str
+    created_at: datetime
     shares: dict[int, int]
 
 
@@ -71,6 +72,9 @@ class LedgerExpenseOut(BaseModel):
 
 
 class GroupLedgerOut(BaseModel):
+    """The contract with the settlement service (GET /api/groups/{id}/ledger)."""
+
     group_id: int
     member_ids: list[int]
     expenses: list[LedgerExpenseOut]
+    viewer_id: int  # the user the forwarded token belongs to

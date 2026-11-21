@@ -1,19 +1,17 @@
-"""Startup behaviour the container contract relies on (§7), without HTTP."""
+"""Startup: the lifespan waits for the database, migrates and seeds, idempotently."""
 
-from contextlib import closing
+from fastapi.testclient import TestClient
 
 from tabby.config import Settings
-from tabby.db import connect
 from tabby.main import create_app
 
 
-def test_app_boots_twice_on_the_same_data_dir_without_duplicating_seed(tmp_path):
-    settings = Settings(port=8000, data_dir=tmp_path / "data")
+def test_app_starts_twice_on_the_same_database_without_duplicating_seed(conn, database_url):
+    settings = Settings(database_url=database_url)
+    for _ in range(2):  # first boot, then a restart
+        with TestClient(create_app(settings)) as client:  # `with` runs the lifespan
+            assert client.get("/health").status_code == 200
 
-    create_app(settings)  # first boot: empty directory
-    app = create_app(settings)  # restart on the same volume
-
-    with closing(connect(settings.db_path)) as conn:
-        assert conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 9
-    paths = set(app.openapi()["paths"])
-    assert {"/api/signup", "/api/groups", "/api/groups/{group_id}/ledger"} <= paths
+    assert conn.execute("SELECT COUNT(*) AS n FROM categories").fetchone()["n"] == 9
+    paths = set(create_app(settings).openapi()["paths"])
+    assert {"/health", "/api/signup", "/api/groups", "/api/groups/{group_id}/ledger"} <= paths

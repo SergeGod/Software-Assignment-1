@@ -22,3 +22,11 @@ class UserOut(BaseModel):
     id: int
     username: str
     display_name: str
+
+
+class SessionOut(BaseModel):
+    """Returned by sign-up and login. The UI sends the token back as
+    `Authorization: Bearer <token>` on every later request."""
+
+    token: str
+    user: UserOut

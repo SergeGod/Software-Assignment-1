@@ -137,6 +137,7 @@ def test_group_ledger_for_the_settlement_service(conn, users, group):
             {"id": expense["id"], "payer_id": alice, "amount_cents": 1000,
              "shares": {alice: 500, bob: 500}}
         ],
+        "viewer_id": bob,
     }
     with pytest.raises(Forbidden):
         service.get_group_ledger(conn, group, users["dave"])
