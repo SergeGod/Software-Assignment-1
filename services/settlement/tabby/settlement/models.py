@@ -1,5 +1,7 @@
 """Request and response shapes for the settlement API (validated by Pydantic)."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -29,4 +31,4 @@ class PaymentOut(BaseModel):
     from_user_id: int
     to_user_id: int
     amount_cents: int
-    created_at: str
+    created_at: datetime

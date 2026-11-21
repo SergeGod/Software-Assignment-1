@@ -4,9 +4,9 @@ The group's ledger arrives as plain data (fetched from the ledger service by
 the routes); this module only adds the payments it owns itself.
 """
 
-import sqlite3
 from dataclasses import asdict
 
+from tabby.db import Connection
 from tabby.errors import Forbidden, InvalidInput
 from tabby.ledger_client import GroupLedger
 from tabby.settlement import repository
@@ -18,14 +18,14 @@ def _require_member(group_ledger: GroupLedger, user_id: int) -> None:
         raise Forbidden("you are not a member of this group")
 
 
-def _payments(conn: sqlite3.Connection, group_id: int) -> list[Payment]:
+def _payments(conn: Connection, group_id: int) -> list[Payment]:
     return [
         Payment(row["from_user_id"], row["to_user_id"], row["amount_cents"])
         for row in repository.list_payments(conn, group_id)
     ]
 
 
-def get_settlement(conn: sqlite3.Connection, group_ledger: GroupLedger, user_id: int) -> dict:
+def get_settlement(conn: Connection, group_ledger: GroupLedger, user_id: int) -> dict:
     """Everyone's balance plus the transfers that would settle the group."""
     _require_member(group_ledger, user_id)
     balances = net_balances(
@@ -40,7 +40,7 @@ def get_settlement(conn: sqlite3.Connection, group_ledger: GroupLedger, user_id:
 
 
 def record_payment(
-    conn: sqlite3.Connection,
+    conn: Connection,
     group_ledger: GroupLedger,
     user_id: int,
     to_user_id: int,
@@ -61,6 +61,6 @@ def record_payment(
     return next(p for p in list_payments(conn, group_ledger, user_id) if p["id"] == payment_id)
 
 
-def list_payments(conn: sqlite3.Connection, group_ledger: GroupLedger, user_id: int) -> list[dict]:
+def list_payments(conn: Connection, group_ledger: GroupLedger, user_id: int) -> list[dict]:
     _require_member(group_ledger, user_id)
     return [dict(row) for row in repository.list_payments(conn, group_ledger.group_id)]
