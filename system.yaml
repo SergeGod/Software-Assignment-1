@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=./system.schema.json
+# DRAFT: public_url is filled in after the first deployment, and ui hosting
+# follows the schema (storage account) until the brief/schema conflict is answered.
+student: shagopian.ieu2024
+prefix: shagopian-ieu2024
+public_url: https://TODO
+ui:
+  path: ui
+  storage_account: shagopianieu2024ui
+  calls: [ledger, settlement]
+azure:
+  resource_group: rg-sdd-3b
+  container_apps_environment: shagopian-ieu2024-env
+  sql_server: shagopian-ieu2024-sql
+  registry: ghcr.io/sergegod
+services:
+  ledger:
+    description: Accounts (users, sessions, friends), groups, members, categories and expenses.
+    path: services/ledger
+    openapi: services/ledger/openapi.json
+    port_default: 8000
+    health: /health
+    migrations: services/ledger/migrations
+    env:
+      PORT: { default: 8000, description: Port the service listens on }
+      DATABASE_URL: { secret: true, description: Connection string of the ledger database }
+      CORS_ORIGINS: { default: "", description: "Origins allowed to call the API from a browser, comma-separated" }
+      SESSION_DAYS: { default: 30, description: Days a session token stays valid }
+      GIT_SHA: { default: dev, description: "Commit the image was built from, reported by /health" }
+    calls: []
+    azure:
+      container_app: shagopian-ieu2024-ledger
+      sql_database: shagopian-ieu2024-ledger-db
+  settlement:
+    description: Balances, settle-up plan and recorded payments.
+    path: services/settlement
+    openapi: services/settlement/openapi.json
+    port_default: 8000
+    health: /health
+    migrations: services/settlement/migrations
+    env:
+      PORT: { default: 8000, description: Port the service listens on }
+      DATABASE_URL: { secret: true, description: Connection string of the settlement database }
+      CORS_ORIGINS: { default: "", description: "Origins allowed to call the API from a browser, comma-separated" }
+      LEDGER_URL: { default: "http://localhost:8001", description: Base URL of the ledger service }
+      LEDGER_TIMEOUT_S: { default: 5, description: Timeout in seconds of every call to ledger }
+      GIT_SHA: { default: dev, description: "Commit the image was built from, reported by /health" }
+    calls:
+      - service: ledger
+        url_env: LEDGER_URL
+        endpoints: ["GET /api/groups/{group_id}/ledger"]
+        timeout_s: 5
+        on_failure: Settlement answers 503 with a clear message; the UI keeps showing expenses and says balances are unavailable.
+    azure:
+      container_app: shagopian-ieu2024-settlement
+      sql_database: shagopian-ieu2024-settlement-db

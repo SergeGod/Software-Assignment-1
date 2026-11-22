@@ -62,6 +62,8 @@ jobs:
       - run: pip install openapi-spec-validator==0.9.0 check-jsonschema==0.39.0
       - name: Each OpenAPI document is valid OpenAPI
         run: openapi-spec-validator services/ledger/openapi.json services/settlement/openapi.json
+      - name: system.yaml matches system.schema.json
+        run: check-jsonschema --schemafile system.schema.json system.yaml
 
   images:
     name: image (${{ matrix.service }})
