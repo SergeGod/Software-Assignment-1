@@ -1,0 +1,49 @@
+name: Azure setup (one-time)
+
+# Run once by hand (Actions -> Azure setup -> Run workflow) before the first
+# deploy. Creates the SQL server, the two serverless databases, the Container
+# Apps environment and one SQL login per service. Safe to run again: every step
+# checks first, and re-running resets the service logins' passwords to the
+# current secrets (how a leaked database password is rotated).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: SQL server, databases and Container Apps environment
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+        run: infra/setup.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pymssql==2.4.6
+      - name: Let this runner (and only it) through the SQL firewall
+        run: |
+          set -a; source infra/config.sh; set +a
+          ip=$(curl -s https://api.ipify.org)
+          az sql server firewall-rule create -g "$RG" -s "$SQL_SERVER" -n github-setup-runner \
+            --start-ip-address "$ip" --end-ip-address "$ip" --output none
+      - name: One login per service, each a user of its own database only
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          LEDGER_DB_PASSWORD: ${{ secrets.LEDGER_DB_PASSWORD }}
+          SETTLEMENT_DB_PASSWORD: ${{ secrets.SETTLEMENT_DB_PASSWORD }}
+        run: |
+          set -a; source infra/config.sh; set +a
+          python infra/create_sql_logins.py
+      - name: Remove the runner's firewall rule
+        if: always()
+        run: |
+          set -a; source infra/config.sh; set +a
+          az sql server firewall-rule delete -g "$RG" -s "$SQL_SERVER" -n github-setup-runner \
+            --output none || true
