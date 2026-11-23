@@ -91,6 +91,29 @@ End to end, with the stack running: `python3 tests/e2e/cross_seam.py flow`, then
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs on every push and pull request: `ruff` and `pytest` per service against a throwaway SQL Server container with a random password (fails under 70% coverage), validation of both OpenAPI documents, a Docker build of each image, and the cross-seam test on the compose stack. It never connects to Azure.
 
+## Deployment to Azure
+
+Everything on Azure is created and deployed by GitHub Actions, never by hand in the portal. Names come from [infra/config.sh](infra/config.sh) and all start with `shagopian-ieu2024`.
+
+| Resource | Name | Plan |
+|---|---|---|
+| Resource group (exists) | `rg-sdd-3b` | |
+| Container Apps environment | `shagopian-ieu2024-env` | Consumption, no log store |
+| Container Apps | `shagopian-ieu2024-ledger`, `shagopian-ieu2024-settlement` | 0.25 vCPU / 0.5 GiB, 0 to 1 replica |
+| Azure SQL server | `shagopian-ieu2024-sql` | logins `ledger_user`, `settlement_user` |
+| Databases | `shagopian-ieu2024-ledger-db`, `shagopian-ieu2024-settlement-db` | serverless GP Gen5, 0.5-1 vCore, auto-pause 15 min, 2 GB, LRS backups |
+| Images | `ghcr.io/sergegod/tabby-ledger:<sha>`, `ghcr.io/sergegod/tabby-settlement:<sha>` | public |
+
+### Initial setup (once)
+
+1. GitHub repository secrets (Settings -> Secrets and variables -> Actions): `AZURE_CREDENTIALS` (the class service principal as JSON, from the professor), and `SQL_ADMIN_PASSWORD`, `LEDGER_DB_PASSWORD`, `SETTLEMENT_DB_PASSWORD`, each generated without ever being shown: `gh secret set LEDGER_DB_PASSWORD --body "Tb_$(openssl rand -hex 16)"`.
+2. Actions -> **Azure setup (one-time)** -> Run workflow. [azure-setup.yml](.github/workflows/azure-setup.yml) runs [infra/setup.sh](infra/setup.sh) (SQL server with the "Allow Azure services" firewall rule, both databases, the Container Apps environment), then opens the firewall to its own runner IP only, creates one login per service with access to its own database only ([infra/create_sql_logins.py](infra/create_sql_logins.py)), and removes that firewall rule.
+3. Merge a pull request into `main`. After the first CD run, if the deploy job says an image is private: GitHub -> Packages -> `tabby-<service>` -> Package settings -> Change visibility -> Public, then re-run the job.
+
+### Every merge to main
+
+[cd.yml](.github/workflows/cd.yml) runs the whole CI workflow on the commit; only if it passes, it pushes both images tagged with the commit SHA, checks they are public, deploys them with [infra/deploy-service.sh](infra/deploy-service.sh) (creates each Container App the first time, then updates image and secret; the database URL is a Container Apps secret referenced by `DATABASE_URL`), waits up to 5 minutes for each `/health` to return 200 with the new SHA ([infra/wait-healthy.sh](infra/wait-healthy.sh)), and prints the startup logs, including the migrations applied.
+
 ## API
 
 Each service publishes its OpenAPI document at `/docs` and commits it as `openapi.json` ([ledger](services/ledger/openapi.json), [settlement](services/settlement/openapi.json)); a test fails if the file and the code disagree (`python -m tabby.openapi_export` regenerates it). Everything except `/health`, sign-up and login needs `Authorization: Bearer <token>`, where the token comes from sign-up or login.
