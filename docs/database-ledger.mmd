@@ -1,0 +1,63 @@
+erDiagram
+    users {
+        INT id PK "IDENTITY"
+        NVARCHAR username UK
+        NVARCHAR display_name
+        NVARCHAR password_hash "scrypt"
+        DATETIME2 created_at
+    }
+    sessions {
+        CHAR token_hash PK "SHA-256 of the bearer token"
+        INT user_id FK
+        DATETIME2 expires_at
+    }
+    friendships {
+        INT user_id PK,FK "smaller id"
+        INT friend_id PK,FK
+        DATETIME2 created_at
+    }
+    categories {
+        INT id PK "IDENTITY"
+        NVARCHAR name UK "seeded"
+    }
+    expense_groups {
+        INT id PK "IDENTITY"
+        NVARCHAR name
+        DATETIME2 created_at
+    }
+    group_members {
+        INT group_id PK,FK
+        INT user_id PK "plain id, checked in code"
+    }
+    expenses {
+        INT id PK "IDENTITY"
+        INT group_id FK
+        INT payer_id FK
+        NVARCHAR description
+        INT amount_cents "> 0"
+        NVARCHAR split_type
+        INT category_id FK
+        DATETIME2 created_at
+        DATE spent_on "migration 002"
+    }
+    expense_shares {
+        INT expense_id PK,FK
+        INT group_id FK
+        INT user_id PK,FK
+        INT share_cents
+    }
+    schema_migrations {
+        NVARCHAR version PK "file name"
+        DATETIME2 applied_at
+    }
+    service_heartbeat {
+        INT id PK "always 1"
+        DATETIME2 checked_at "written by /health"
+    }
+    users ||--o{ sessions : has
+    users ||--o{ friendships : "is in"
+    expense_groups ||--o{ group_members : has
+    group_members ||--o{ expenses : "pays (group_id, payer_id)"
+    group_members ||--o{ expense_shares : "owes (group_id, user_id)"
+    expenses ||--o{ expense_shares : "split into"
+    categories ||--o{ expenses : classifies

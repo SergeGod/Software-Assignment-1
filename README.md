@@ -12,7 +12,7 @@ It started as the single-process app of SDD Individual Assignment 1 and was spli
 
 **The seam:** settlement calls `GET {LEDGER_URL}/api/groups/{id}/ledger` on the ledger service, forwarding the user's bearer token ([ledger_client.py](services/settlement/tabby/ledger_client.py)). The ledger answers with the members, every expense's per-member shares and who the caller is; settlement adds its own payments and computes the balances. If ledger is down, settlement answers `503` with a clear message and stays healthy; the UI keeps showing expenses and says balances are unavailable.
 
-Live URL: *added after the first deployment.*
+Live URL: **not deployed yet.** The pipeline and the Azure scripts are complete and pass CI, but as of 2026-11-25 the class service principal (`AZURE_CREDENTIALS`) has not been added to the repository secrets, so no CD run has reached Azure. The address will be `https://shagopianieu2024ui.z<N>.web.core.windows.net` and is written here and in `system.yaml` after the first deployment.
 
 ## Run the whole system locally
 
@@ -66,6 +66,7 @@ Everything is configured through environment variables ([system.yaml](system.yam
 
 - Each service has its own database and login: `ledger_user` can only use `ledger`, `settlement_user` only `settlement`. Ids that cross the seam (`payments.group_id`, user ids) have no foreign key (ADR-7).
 - The schema is defined by numbered files in `services/<name>/migrations/` (`001_init.sql`, ...). On startup, before accepting requests, each service applies the files not yet recorded in its `schema_migrations` table, each in one transaction, and logs `applying migration ...`. A second start applies nothing. Applied files are never edited; changes go in a new file.
+- `002_add_expense_spent_on.sql` (ledger) changes a table that already holds data: it adds `expenses.spent_on` as nullable, backfills it from `created_at`, then makes it `NOT NULL` with a default. Existing rows are kept; the output before and after on the local stack is in [docs/evidence](docs/evidence).
 - Seed data: the starter categories ([seed_categories.csv](services/ledger/tabby/ledger/seed_categories.csv)) are inserted only when the `categories` table is empty.
 
 ## Health and logs
@@ -83,7 +84,7 @@ cd services/ledger && TEST_DATABASE_URL="mssql://sa:${SA_PASSWORD}@localhost:143
 cd services/settlement && TEST_DATABASE_URL="mssql://sa:${SA_PASSWORD}@localhost:1433/settlement_test" pytest --cov=tabby
 ```
 
-Result on 2026-11-21: ledger **371 passed, 98%** coverage; settlement **91 passed, 96%**.
+Result on 2026-11-25: ledger **373 passed, 98%** coverage; settlement **91 passed, 96%** (2026-11-21).
 
 End to end, with the stack running: `python3 tests/e2e/cross_seam.py flow`, then `docker compose stop ledger` and `python3 tests/e2e/cross_seam.py ledger-down`.
 
@@ -132,12 +133,15 @@ Money is always integer cents (`amount_cents`). An expense's `split_type` is `eq
 
 ```
 .github/workflows/ci.yml      lint, tests, contracts, image builds, e2e on compose
+.github/workflows/cd.yml      on main: CI, push images, deploy services and UI, health check
+.github/workflows/azure-setup.yml   one-time Azure setup (manual trigger)
+infra/                        Azure CLI scripts used by the two workflows above
 docker-compose.yml            sqlserver + db-init + ledger + settlement + ui (nginx)
 db/init.sql                   local databases and logins (idempotent)
 services/
   ledger/
     Dockerfile, app.py, requirements*.txt, openapi.json
-    migrations/               001_init.sql, ...
+    migrations/               001_init.sql, 002_add_expense_spent_on.sql
     tabby/accounts/           users, sessions, friends
     tabby/ledger/             Domain A: groups, members, expenses, split rules, category seed
     tabby/db.py               connections, retries, migration runner
@@ -156,4 +160,4 @@ ui/                           index.html, app.js, style.css, config.js
 
 - [ADR.md](ADR.md): architecture decision log
 - [AI_USAGE.md](AI_USAGE.md): AI usage log
-- [docs/](docs): diagrams and reports
+- [docs/](docs): the reports ([Assignment 2](docs/Tabby_Report_A2.docx)), the diagrams (architecture before and after, deployment, one database diagram per service) and the evidence

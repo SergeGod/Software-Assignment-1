@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=./system.schema.json
-# DRAFT: public_url is filled in after the first deployment, and ui hosting
-# follows the schema (storage account) until the brief/schema conflict is answered.
+# public_url is filled in after the first deployment (not deployed as of
+# 2026-11-25, see README). UI hosting follows the schema: a storage account.
 student: shagopian.ieu2024
 prefix: shagopian-ieu2024
 public_url: https://TODO
