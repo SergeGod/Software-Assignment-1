@@ -1,7 +1,7 @@
 """One-time: create one login per service on the Azure SQL server and make it
 a user of its own database only (the same rights as db/init.sql locally).
 
-Run by .github/workflows/azure-setup.yml with SQL_ADMIN_PASSWORD,
+Run by infra/setup-local.sh with SQL_ADMIN_PASSWORD,
 LEDGER_DB_PASSWORD and SETTLEMENT_DB_PASSWORD in the environment. Idempotent:
 an existing login gets its password reset to the current secret, which is
 also how a leaked database password is rotated.

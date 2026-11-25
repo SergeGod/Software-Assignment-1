@@ -24,17 +24,50 @@ async function call(baseUrl, serviceName, method, path, body) {
     options.headers["Content-Type"] = "application/json";
     options.body = JSON.stringify(body);
   }
-  let res;
-  try {
-    res = await fetch(`${baseUrl}/api${path}`, options);
-  } catch {
-    // Network error, CORS refusal or the service being down.
-    throw new Error(`The ${serviceName} service is not reachable. Try again in a minute.`);
+  // On Azure both services scale to zero. The first request after an idle
+  // period starts a container (and maybe a paused database), and until it is
+  // ready the platform answers 503 with no JSON body, or the request fails.
+  // Reads are retried for about a minute with a visible notice; writes are
+  // not repeated automatically, because the first try may still be processed.
+  const tries = method === "GET" && COLD_STARTS ? STARTUP_TRIES : 1;
+  for (let attempt = 1; ; attempt += 1) {
+    let res = null;
+    let data = null;
+    try {
+      res = await fetch(`${baseUrl}/api${path}`, options);
+      if (res.status === 204) return null;
+      data = await res.json().catch(() => null);
+    } catch {
+      // Network error, CORS refusal or the service being down.
+    }
+    if (res && res.ok) {
+      startingUp(false);
+      return data;
+    }
+    const starting = !res || ([502, 503, 504].includes(res.status) && !(data && data.detail));
+    if (!starting) {
+      startingUp(false);
+      throw new Error(errorMessage(data, res.status));
+    }
+    if (attempt >= tries) {
+      startingUp(false);
+      throw new Error(`The ${serviceName} service is starting up or not reachable. Try again in a minute.`);
+    }
+    startingUp(true);
+    await new Promise((resolve) => setTimeout(resolve, STARTUP_WAIT_MS));
   }
-  if (res.status === 204) return null;
-  const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(errorMessage(data, res.status));
-  return data;
+}
+
+// Set by the deployed config.js; locally nothing scales to zero, so a service
+// that does not answer is simply down and the UI says so at once.
+const COLD_STARTS = Boolean((window.TABBY_CONFIG || {}).coldStarts);
+const STARTUP_TRIES = 7;
+const STARTUP_WAIT_MS = 10000;
+
+// A notice that stays while a service is waking up.
+function startingUp(on) {
+  const box = document.getElementById("starting");
+  if (box) box.hidden = !on;
 }
 
 const api = (method, path, body) => call(ledgerUrl, "ledger", method, path, body);
