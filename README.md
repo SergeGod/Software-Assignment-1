@@ -12,7 +12,7 @@ It started as the single-process app of SDD Individual Assignment 1 and was spli
 
 **The seam:** settlement calls `GET {LEDGER_URL}/api/groups/{id}/ledger` on the ledger service, forwarding the user's bearer token ([ledger_client.py](services/settlement/tabby/ledger_client.py)). The ledger answers with the members, every expense's per-member shares and who the caller is; settlement adds its own payments and computes the balances. If ledger is down, settlement answers `503` with a clear message and stays healthy; the UI keeps showing expenses and says balances are unavailable.
 
-Live URL: *added after the first deployment.*
+Live URL: **https://shagopianieu2024ui1.z43.web.core.windows.net**
 
 ## Run the whole system locally
 
@@ -102,14 +102,14 @@ Everything runs in my own Azure for Students subscription, in one resource group
 | Container Apps environment | `shagopian-ieu2024-env` | Consumption, with the Log Analytics workspace Azure creates for it |
 | Container Apps | `shagopian-ieu2024-ledger`, `shagopian-ieu2024-settlement` | 0.25 vCPU / 0.5 GiB, 0 to 1 replica |
 | Azure SQL server | `shagopian-ieu2024-sql` | logins `ledger_user`, `settlement_user` |
-| Databases | `shagopian-ieu2024-ledger-db`, `shagopian-ieu2024-settlement-db` | serverless GP Gen5, 0.5-1 vCore, Azure SQL free offer (auto-pause 60 min, 32 GB), LRS backups |
+| Databases | `shagopian-ieu2024-ledger-db`, `shagopian-ieu2024-settlement-db` | serverless GP Gen5, 0.5-1 vCore, auto-pause 60 min, 32 GB, LRS backups; paid from the student credit because Azure refused the free offer (ADR-8) |
 | UI | storage account `shagopianieu2024ui1` (static website) | Standard LRS, pay per GB and request |
 | Images | `ghcr.io/sergegod/tabby-ledger:<sha>`, `ghcr.io/sergegod/tabby-settlement:<sha>` | public |
 
 ### Initial setup (once)
 
 1. Sign in with `az login` (Azure for Students subscription) and `gh auth login`, and pick a region the subscription allows: `az account list-locations -o table` lists them.
-2. Run `LOCATION=<region> bash infra/setup-local.sh`. [setup-local.sh](infra/setup-local.sh) generates the three database passwords and stores them as GitHub secrets without showing them, then runs [infra/setup.sh](infra/setup.sh): the resource group; the managed identity with a federated credential that trusts only workflow runs on `main` of this repository, and Contributor on this resource group; the SQL server with the "Allow Azure services" firewall rule and both databases; the Container Apps environment; the storage account with its static website switched on. It stores the identity's client id, the tenant id and the subscription id as GitHub secrets (identifiers, not passwords), opens the SQL firewall to its own IP only, creates one login per service with access to its own database only ([infra/create_sql_logins.py](infra/create_sql_logins.py)), and removes that firewall rule. Running it again changes nothing except rotating the database passwords.
+2. Run `LOCATION=<region> bash infra/setup-local.sh` (add `SQL_OFFER=paid` to skip the free-offer attempts; this deployment used `SQL_OFFER=paid LOCATION=spaincentral`). [setup-local.sh](infra/setup-local.sh) generates the three database passwords and stores them as GitHub secrets without showing them, then runs [infra/setup.sh](infra/setup.sh): the resource group; the managed identity with a federated credential that trusts only workflow runs on `main` of this repository, and Contributor on this resource group; the SQL server with the "Allow Azure services" firewall rule and both databases; the Container Apps environment; the storage account with its static website switched on. It stores the identity's client id, the tenant id and the subscription id as GitHub secrets (identifiers, not passwords), opens the SQL firewall to its own IP only, creates one login per service with access to its own database only ([infra/create_sql_logins.py](infra/create_sql_logins.py)), and removes that firewall rule. Running it again changes nothing except rotating the database passwords.
 3. Merge a pull request into `main`. After the first CD run, if the deploy job says an image is private: GitHub -> Packages -> `tabby-<service>` -> Package settings -> Change visibility -> Public, then re-run the job.
 
 ### Every merge to main
