@@ -99,3 +99,16 @@ ul.plain li:last-child { border-bottom: 0; }
 }
 #toast.error { background: var(--owes); color: #fff; }
 .unavailable { color: var(--owes); font-weight: 600; margin: .25rem 0; }
+
+/* Shown while a service that scaled to zero is waking up. */
+.starting {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.6rem 1rem;
+  background: #fff4d6;
+  color: #5c4400;
+  text-align: center;
+  z-index: 20;
+}
