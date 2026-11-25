@@ -1,0 +1,7 @@
+From the 'Startup logs (migrations)' step of https://github.com/SergeGod/Software-Assignment-1/actions/runs/45686882821 (az containerapp logs show, shagopian-ieu2024-ledger):
+{"TimeStamp": "2026-11-25T19:39:26.5508", "Log": "Connecting to the container 'shagopian-ieu2024-ledger'..."}
+{"TimeStamp": "2026-11-25T19:39:26.6618", "Log": "Successfully Connected to container: 'shagopian-ieu2024-ledger' [Revision: 'shagopian-ieu2024-ledger--latest', Replica: 'shagopian-ieu2024-ledger--latest-7ccf67a6-ff19-4bf5-8e91-d25706d23583']"}
+{"TimeStamp": "2026-11-25T19:38:41.9327254+00:00", "Log": "INFO:     Started server process [5]"}
+{"TimeStamp": "2026-11-25T19:38:41.9327254+00:00", "Log": "INFO:     Waiting for application startup."}
+{"TimeStamp": "2026-11-25T19:38:42.0100479+00:00", "Log": "2026-11-25 19:38:42,009 INFO tabby.db applying migration 002_add_expense_spent_on.sql"}
+{"TimeStamp": "2026-11-25T19:38:42.0579772+00:00", "Log": "2026-11-25 19:38:42,057 INFO tabby.db schema up to date: 1 migration(s) applied now, 2 in total"}
