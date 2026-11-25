@@ -1,0 +1,46 @@
+Captured (UTC): 2026-11-25 19:34:34
+$ curl https://shagopian-ieu2024-ledger.icyocean-e93f37cf.spaincentral.azurecontainerapps.io/health
+{"status":"ok","db":"ok","version":"3c2f03054b123e213da27cb3553002a519b50478"}
+
+$ curl -H 'Authorization: Bearer <token>' https://shagopian-ieu2024-ledger.icyocean-e93f37cf.spaincentral.azurecontainerapps.io/api/groups/1/expenses
+[
+ {
+  "id": 3,
+  "payer_id": 1,
+  "description": "Train tickets",
+  "amount_cents": 6200,
+  "split_type": "equal",
+  "category_id": 3,
+  "created_at": "2026-11-25T19:34:34.580500",
+  "shares": {
+   "1": 3100,
+   "2": 3100
+  }
+ },
+ {
+  "id": 2,
+  "payer_id": 1,
+  "description": "Electricity bill",
+  "amount_cents": 8450,
+  "split_type": "equal",
+  "category_id": 2,
+  "created_at": "2026-11-25T19:34:34.434267",
+  "shares": {
+   "1": 4225,
+   "2": 4225
+  }
+ },
+ {
+  "id": 1,
+  "payer_id": 1,
+  "description": "Groceries",
+  "amount_cents": 3000,
+  "split_type": "equal",
+  "category_id": 1,
+  "created_at": "2026-11-25T19:34:20.033033",
+  "shares": {
+   "1": 1500,
+   "2": 1500
+  }
+ }
+]

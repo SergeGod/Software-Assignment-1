@@ -5,23 +5,27 @@ flowchart LR
         cd["cd.yml (push to main only)<br/>needs CI on the same commit"]
         ghcr[("GHCR<br/>ghcr.io/sergegod/tabby-ledger:&lt;sha&gt;<br/>ghcr.io/sergegod/tabby-settlement:&lt;sha&gt;")]
     end
-    subgraph az["Azure: resource group rg-sdd-3b (West Europe)"]
+    subgraph az["Azure: rg-shagopian-ieu2024 (Spain Central)"]
         subgraph env["Container Apps environment shagopian-ieu2024-env (Consumption)"]
             la["shagopian-ieu2024-ledger<br/>0 to 1 replica"]
             sa["shagopian-ieu2024-settlement<br/>0 to 1 replica"]
         end
         subgraph sql["SQL server shagopian-ieu2024-sql"]
-            ldb[("shagopian-ieu2024-ledger-db<br/>serverless, auto-pause")]
-            sdb[("shagopian-ieu2024-settlement-db<br/>serverless, auto-pause")]
+            ldb[("shagopian-ieu2024-ledger-db<br/>serverless, auto-pause 60 min")]
+            sdb[("shagopian-ieu2024-settlement-db<br/>serverless, auto-pause 60 min")]
         end
-        ui["Storage account shagopianieu2024ui<br/>static website ($web): the UI"]
+        id["Managed identity shagopian-ieu2024-github<br/>trusted only for runs on main (OIDC)"]
+        logs["Log Analytics workspace<br/>container logs"]
+        ui["Storage account shagopianieu2024ui1<br/>static website ($web): the UI"]
     end
     user(["User's browser"])
 
     dev --> ci
     dev --> cd
     cd -->|"step 1: docker push :sha"| ghcr
-    cd -->|"step 2: az containerapp create/update<br/>(service principal)"| env
+    cd -->|"step 2: sign in as the identity (OIDC),<br/>az containerapp create/update"| env
+    id -.->|"Contributor on this group"| env
+    env -.-> logs
     cd -->|"step 3: upload ui/ + generated config.js"| ui
     cd -->|"step 4: poll /health until 200 with this sha"| env
     ghcr -.->|"image pull"| env

@@ -6,7 +6,9 @@ date: "25 November 2026"
 
 Repository: <https://github.com/SergeGod/Software-Assignment-1> · graded commit: tag `submission` on `main`.
 
-**Status, stated plainly.** The two services, their databases, the migrations, the compose stack, the tests and the CI pipeline are complete and pass. The CD pipeline and the Azure scripts are written and pass CI, but **the system is not deployed on Azure**: the class service principal was not in the repository secrets when this report was written, so no CD run has reached Azure. There is therefore no live URL, and the migration and pipeline evidence below is from the local compose stack and from CI, not from Azure. The last part of the work (migration 002, UI deployment, ADR-9, ADR-10, this report) was done on 25 November, one day after the deadline; no commit was backdated.
+**Live URL: <https://shagopianieu2024ui1.z43.web.core.windows.net>**
+
+**Lateness, stated plainly.** The services, databases, compose stack, tests and CI were finished by 23 November. The Azure deployment, migration 002, ADR-9, ADR-10 and this report were done on 25 November, one day after the deadline; no commit was backdated. Part of the delay was mine: I had built the Azure side against an earlier version of §7 (shared class subscription, service principal) and reworked it on the 25th for my own Azure for Students subscription and the OpenID Connect identity.
 
 # 1. Architecture, before and after
 
@@ -20,9 +22,9 @@ Assignment 2 cuts exactly there (ADR-6). `ledger` keeps accounts and Domain A; `
 
 # 2. Deployment
 
-Every push runs `ci.yml`. A merge to `main` runs `cd.yml`, which first calls the same CI workflow and only then pushes both images to GHCR tagged with the commit SHA, deploys them to Container Apps (0 to 1 replica, Consumption), uploads the UI with a generated `config.js`, and polls each `/health` until it returns 200 with that SHA. The one-time setup (`infra/setup.sh`, `azure-setup.yml`) creates the SQL server, the two serverless databases (GP Gen5, 0.5 to 1 vCore, auto-pause 15 min, 2 GB), the environment and the storage account. The assignment text names Static Web Apps for the UI while `system.schema.json` requires `ui.storage_account`; I followed the schema (ADR-8).
+Every push runs `ci.yml`. A merge to `main` runs `cd.yml`, which first calls the same CI workflow and only then pushes both images to GHCR tagged with the commit SHA, signs in to Azure as the managed identity `shagopian-ieu2024-github` through OpenID Connect (no Azure secret is stored; the identity trusts only runs on `main` of this repository and has Contributor on the resource group only), deploys the images to Container Apps (0 to 1 replica, Consumption), uploads the UI with a generated `config.js` to the storage account's `$web` container, and polls each `/health` until it returns 200 with that SHA. The one-time setup is a script, `infra/setup-local.sh`. One deviation from §7: Azure refused the SQL free offer on my subscription (`ProvisioningDisabled`), so the two databases are the same serverless configuration (0.5 to 1 vCore, auto-pause 60 min) paid from the student credit (ADR-8). The storage account is `shagopianieu2024ui1` because the plain name was taken.
 
-![Deployment as designed: GitHub, Actions, GHCR and the Azure resources by name (not yet created)](deployment.png){width=100%}
+![Deployment: GitHub, Actions, GHCR and the Azure resources by name](deployment.png){width=100%}
 
 # 3. Databases
 
@@ -32,45 +34,38 @@ Each service has its own database and its own login with access to that database
 
 ![settlement database, after migration 001](database-settlement.png){width=55%}
 
-# 4. Migration evidence
+# 4. Migration evidence on Azure
 
 The runner (`tabby/db.py:migrate`) applies the numbered files not yet in `schema_migrations`, each in one transaction with the row that records it, before the service opens its port. `002_add_expense_spent_on.sql` changes `expenses`, which already held rows: add `spent_on` as nullable, backfill it from `created_at` in a second batch, then make it `NOT NULL` with a default.
 
-**Not on Azure** (see status above). On the local stack, whose ledger database had been running since 21 November:
-
-Before (`docs/evidence/migration-002-local-before.txt`):
+**Before** (commit `3c2f030` deployed, only migration 001; `docs/evidence/migration-002-azure-before.txt`, 19:34 UTC). `GET /api/groups/1/expenses` on the live ledger returned three expenses without a date field:
 
 ```
-001_init.sql 2026-11-21 20:15:48
-id group_id payer_id description amount_cents ... created_at
-3  3        4        Groceries   3000             2026-11-25 12:58:19
-2  2        3        Pizza       2400             2026-11-21 20:16:26
-1  1        1        Groceries   3000             2026-11-21 20:16:15
+{"id": 3, "description": "Train tickets",    "amount_cents": 6200, "created_at": "2026-11-25T19:34:34"}
+{"id": 2, "description": "Electricity bill", "amount_cents": 8450, "created_at": "2026-11-25T19:34:34"}
+{"id": 1, "description": "Groceries",        "amount_cents": 3000, "created_at": "2026-11-25T19:34:20"}
 ```
 
-Startup log of the new image, then of a restart:
+**Deployment run** of the migration (commit `35e9383`): <https://github.com/SergeGod/Software-Assignment-1/actions/runs/45686882821>. Its "Startup logs" step shows the ledger container on Azure:
 
 ```
-INFO tabby.db applying migration 002_add_expense_spent_on.sql
-INFO tabby.db schema up to date: 1 migration(s) applied now, 2 in total
-INFO tabby.db schema up to date: 0 migration(s) applied now, 2 in total
+2026-11-25 19:38:42,009 INFO tabby.db applying migration 002_add_expense_spent_on.sql
+2026-11-25 19:38:42,057 INFO tabby.db schema up to date: 1 migration(s) applied now, 2 in total
 ```
 
-After (`migration-002-local-after.txt`): the same three rows, each with its date.
+**After** (`migration-002-azure-after.txt`; `/health` reports version `35e9383…`): the same three rows, same ids and amounts, each now with its date.
 
 ```
-002_add_expense_spent_on.sql 2026-11-25 13:00:40
-id ... description amount_cents created_at          spent_on
-3      Groceries   3000         2026-11-25 12:58:19 2026-11-25
-2      Pizza       2400         2026-11-21 20:16:26 2026-11-21
-1      Groceries   3000         2026-11-21 20:16:15 2026-11-21
+{"id": 3, "description": "Train tickets",    "amount_cents": 6200, "spent_on": "2026-11-25"}
+{"id": 2, "description": "Electricity bill", "amount_cents": 8450, "spent_on": "2026-11-25"}
+{"id": 1, "description": "Groceries",        "amount_cents": 3000, "spent_on": "2026-11-25"}
 ```
 
-A unit test repeats this on every CI run: it rewinds the test database to 001, inserts an expense the old way, migrates and checks the row.
+The same migration was first run on the local stack, whose rows dated from 21 November and were backfilled with that date (`migration-002-local-*.txt`), and a unit test repeats it on every CI run.
 
 # 5. Partial failure
 
-Every call to ledger has a timeout (5 s locally, 20 s on Azure). With `docker compose stop settlement`, ledger keeps serving groups and expenses and the UI replaces the balances card with a notice and a Retry button:
+Every call to ledger has a timeout (5 s locally, 20 s on Azure). On Azure both services start from zero, so the UI shows a "starting up, retrying" notice and retries reads for about a minute instead of a blank page. With `docker compose stop settlement`, ledger keeps serving groups and expenses and the UI replaces the balances card with a notice and a Retry button:
 
 ![UI with settlement stopped (local)](evidence/ui-settlement-down-local.jpg){width=70%}
 
@@ -78,9 +73,11 @@ With ledger stopped, settlement answers `503 {"detail": "the ledger service is n
 
 # 6. Pipeline evidence
 
-CI runs on every push and pull request: lint, tests against a SQL Server container, coverage (gate 70%; measured 98% ledger, 96% settlement), OpenAPI and `system.yaml` validation, both image builds, and the end-to-end test. Example of a green run on a pull request: <https://github.com/SergeGod/Software-Assignment-1/actions/runs/45619521037>.
+CI runs on every push and pull request: lint, tests against a SQL Server container, coverage (gate 70%; measured 98% ledger, 96% settlement), OpenAPI and `system.yaml` validation, both image builds, and the end-to-end test.
 
-A successful CD run on `main` does not exist yet, for the reason given in the status paragraph. No run on GitHub has failed so far: the failures I hit (tests unable to reach SQL Server because the port was not published in compose; a `LIKE '9%'` that pymssql read as a parameter marker; a wrong argument list that made `spent_on` silently fall back to today, caught by its test) were found and fixed locally before pushing, and are listed in the commit history and AI_USAGE.md.
+Successful CD run on `main`: <https://github.com/SergeGod/Software-Assignment-1/actions/runs/45686882821> (CI, both images pushed with the SHA, both services and the UI deployed, both `/health` checks green on that SHA).
+
+Failed run that was fixed: <https://github.com/SergeGod/Software-Assignment-1/actions/runs/45685648955>, attempt 1. CI and the image pushes passed, and `azure/login` failed with `AADSTS700213: No matching federated identity record found for presented assertion subject 'repo:SergeGod@194789741/Software-Assignment-1@1410389459:ref:refs/heads/main'`. Cause: the identity's federated credential had been created with the subject `repo:SergeGod/Software-Assignment-1:ref:refs/heads/main`, but GitHub's token carries the numeric owner and repository ids. Fix: the credential was recreated with the exact subject (and `infra/setup.sh` now reads the ids from the GitHub API); attempt 2 of the same run deployed successfully. An earlier run, <https://github.com/SergeGod/Software-Assignment-1/actions/runs/45625378611>, failed at the same step because no Azure credentials existed yet.
 
 # 7. Decisions in short
 
@@ -88,4 +85,4 @@ ADR-6 the split and the bearer token; ADR-7 numbered SQL migrations, integrity a
 
 # 8. AI disclosure
 
-I acknowledge the use of Claude Code (Anthropic, models Claude Opus 5.5 and Claude Fable 5.2) to propose design options, generate the service code, migrations, tests, Dockerfiles, compose file, workflows, Azure scripts, diagrams and the drafts of ADR 6 to 10 and of this report, and to run and verify the system locally. The prompts used include "split Tabby into ledger and settlement services with their own Dockerfiles and tests", "finish the service side: SQL Server with versioned migrations, bearer token, /health, request logs, CORS, compose, CI", "write the one-time Azure setup and the CD workflow" and "finish the assignment: a migration that changes a table holding data, the UI deployment, ADR-9 and ADR-10, the diagrams and the report". The output of these prompts was used to build the code base and its documentation; the decision to keep accounts inside the ledger service was mine. Each interaction is logged in AI_USAGE.md.
+I acknowledge the use of Claude Code (Anthropic, models Claude Opus 5.5 and Claude Fable 5.2) to propose design options, generate the service code, migrations, tests, Dockerfiles, compose file, workflows, Azure scripts, diagrams and the drafts of ADR 6 to 10 and of this report, and to run and verify the system locally and on Azure. I ran the Azure setup commands myself. The prompts used include "split Tabby into ledger and settlement services with their own Dockerfiles and tests", "finish the service side: SQL Server with versioned migrations, bearer token, /health, request logs, CORS, compose, CI", "write the one-time Azure setup and the CD workflow" and "finish the assignment: a migration that changes a table holding data, the UI deployment, ADR-9 and ADR-10, the diagrams and the report" and "rework the Azure setup for my own Azure for Students subscription with an OpenID Connect identity". The output of these prompts was used to build the code base and its documentation; the decision to keep accounts inside the ledger service was mine. Each interaction is logged in AI_USAGE.md.

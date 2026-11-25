@@ -12,7 +12,7 @@ It started as the single-process app of SDD Individual Assignment 1 and was spli
 
 **The seam:** settlement calls `GET {LEDGER_URL}/api/groups/{id}/ledger` on the ledger service, forwarding the user's bearer token ([ledger_client.py](services/settlement/tabby/ledger_client.py)). The ledger answers with the members, every expense's per-member shares and who the caller is; settlement adds its own payments and computes the balances. If ledger is down, settlement answers `503` with a clear message and stays healthy; the UI keeps showing expenses and says balances are unavailable.
 
-Live URL: **not deployed yet.** The pipeline and the Azure scripts are complete and pass CI, but as of 2026-11-25 the class service principal (`AZURE_CREDENTIALS`) has not been added to the repository secrets, so no CD run has reached Azure. The address will be `https://shagopianieu2024ui.z<N>.web.core.windows.net` and is written here and in `system.yaml` after the first deployment.
+Live URL: **https://shagopianieu2024ui1.z43.web.core.windows.net**
 
 ## Run the whole system locally
 
@@ -94,23 +94,23 @@ End to end, with the stack running: `python3 tests/e2e/cross_seam.py flow`, then
 
 ## Deployment to Azure
 
-Everything on Azure is created and deployed by GitHub Actions, never by hand in the portal. Names come from [infra/config.sh](infra/config.sh) and all start with `shagopian-ieu2024`.
+Everything runs in my own Azure for Students subscription, in one resource group. It is created once by a script and after that deployed only by GitHub Actions, never by hand in the portal. Names come from [infra/config.sh](infra/config.sh) and all start with `shagopian-ieu2024`.
 
 | Resource | Name | Plan |
 |---|---|---|
-| Resource group (exists) | `rg-sdd-3b` | |
-| Container Apps environment | `shagopian-ieu2024-env` | Consumption, no log store |
+| Resource group | `rg-shagopian-ieu2024` | |
+| Managed identity | `shagopian-ieu2024-github` | what the pipeline signs in as (OpenID Connect); Contributor on the resource group only |
+| Container Apps environment | `shagopian-ieu2024-env` | Consumption, with the Log Analytics workspace Azure creates for it |
 | Container Apps | `shagopian-ieu2024-ledger`, `shagopian-ieu2024-settlement` | 0.25 vCPU / 0.5 GiB, 0 to 1 replica |
 | Azure SQL server | `shagopian-ieu2024-sql` | logins `ledger_user`, `settlement_user` |
-| Databases | `shagopian-ieu2024-ledger-db`, `shagopian-ieu2024-settlement-db` | serverless GP Gen5, 0.5-1 vCore, auto-pause 15 min, 2 GB, LRS backups |
-| UI | storage account `shagopianieu2024ui` (static website) | Standard LRS, pay per GB and request |
+| Databases | `shagopian-ieu2024-ledger-db`, `shagopian-ieu2024-settlement-db` | serverless GP Gen5, 0.5-1 vCore, auto-pause 60 min, 32 GB, LRS backups; paid from the student credit because Azure refused the free offer (ADR-8) |
+| UI | storage account `shagopianieu2024ui1` (static website) | Standard LRS, pay per GB and request |
 | Images | `ghcr.io/sergegod/tabby-ledger:<sha>`, `ghcr.io/sergegod/tabby-settlement:<sha>` | public |
 
 ### Initial setup (once)
 
-1. GitHub repository secrets (Settings -> Secrets and variables -> Actions): `AZURE_CREDENTIALS` (the class service principal as JSON, from the professor), and `SQL_ADMIN_PASSWORD`, `LEDGER_DB_PASSWORD`, `SETTLEMENT_DB_PASSWORD`, each generated without ever being shown: `gh secret set LEDGER_DB_PASSWORD --body "Tb_$(openssl rand -hex 16)"`.
-2. Actions -> **Azure setup (one-time)** -> Run workflow. [azure-setup.yml](.github/workflows/azure-setup.yml) runs [infra/setup.sh](infra/setup.sh) (SQL server with the "Allow Azure services" firewall rule, both databases, the Container Apps environment, the storage account with its static website switched on), then opens the firewall to its own runner IP only, creates one login per service with access to its own database only ([infra/create_sql_logins.py](infra/create_sql_logins.py)), and removes that firewall rule.
-   The same setup can be run from a laptop with your own `az login` instead: `bash infra/setup-local.sh` (this is how it was run on 2026-11-25).
+1. Sign in with `az login` (Azure for Students subscription) and `gh auth login`, and pick a region the subscription allows: `az account list-locations -o table` lists them.
+2. Run `LOCATION=<region> bash infra/setup-local.sh` (add `SQL_OFFER=paid` to skip the free-offer attempts; this deployment used `SQL_OFFER=paid LOCATION=spaincentral`). [setup-local.sh](infra/setup-local.sh) generates the three database passwords and stores them as GitHub secrets without showing them, then runs [infra/setup.sh](infra/setup.sh): the resource group; the managed identity with a federated credential that trusts only workflow runs on `main` of this repository, and Contributor on this resource group; the SQL server with the "Allow Azure services" firewall rule and both databases; the Container Apps environment; the storage account with its static website switched on. It stores the identity's client id, the tenant id and the subscription id as GitHub secrets (identifiers, not passwords), opens the SQL firewall to its own IP only, creates one login per service with access to its own database only ([infra/create_sql_logins.py](infra/create_sql_logins.py)), and removes that firewall rule. Running it again changes nothing except rotating the database passwords.
 3. Merge a pull request into `main`. After the first CD run, if the deploy job says an image is private: GitHub -> Packages -> `tabby-<service>` -> Package settings -> Change visibility -> Public, then re-run the job.
 
 ### Every merge to main

@@ -53,6 +53,9 @@ jobs:
   deploy:
     needs: publish
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write          # lets this job ask GitHub for the OIDC token
     steps:
       - uses: actions/checkout@v4
       - run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
@@ -67,9 +70,14 @@ jobs:
               exit 1
             fi
           done
+      # OpenID Connect: GitHub gives this run a short-lived token saying "a run on
+      # main of this repository", and Azure exchanges it for access as the
+      # managed identity. The three values are identifiers, not passwords.
       - uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - name: UI origin (the only origin the services allow in CORS)
         run: echo "UI_ORIGIN=$(infra/ui-url.sh)" >> "$GITHUB_ENV"
       - name: Deploy ledger

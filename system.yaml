@@ -1,15 +1,13 @@
 # yaml-language-server: $schema=./system.schema.json
-# public_url is filled in after the first deployment (not deployed as of
-# 2026-11-25, see README). UI hosting follows the schema: a storage account.
 student: shagopian.ieu2024
 prefix: shagopian-ieu2024
-public_url: https://shagopianieu2024ui.z6.web.core.windows.net
+public_url: https://shagopianieu2024ui1.z43.web.core.windows.net
 ui:
   path: ui
-  storage_account: shagopianieu2024ui
+  storage_account: shagopianieu2024ui1
   calls: [ledger, settlement]
 azure:
-  resource_group: rg-sdd-3b
+  resource_group: rg-shagopian-ieu2024
   container_apps_environment: shagopian-ieu2024-env
   sql_server: shagopian-ieu2024-sql
   registry: ghcr.io/sergegod
