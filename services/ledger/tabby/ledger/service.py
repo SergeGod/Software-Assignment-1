@@ -1,6 +1,7 @@
 """Business rules for groups, members and expenses."""
 
 from dataclasses import asdict
+from datetime import UTC, date, datetime, timedelta
 
 from tabby import db
 from tabby.accounts import interface as accounts
@@ -82,9 +83,13 @@ def add_expense(
     split_type: str,
     category_id: int,
     participants: list[tuple[int, int]],
+    spent_on: date | None = None,
 ) -> dict:
     """participants is a list of (user_id, value) pairs; see splits.compute_shares."""
     _require_member(conn, group_id, actor_id)
+    # One day of slack: the caller's "today" may be ahead of UTC.
+    if spent_on and spent_on > datetime.now(UTC).date() + timedelta(days=1):
+        raise InvalidInput("spent_on must not be in the future")
     description = description.strip()
     if not description:
         raise InvalidInput("description must not be empty")
@@ -103,7 +108,15 @@ def add_expense(
     shares = compute_shares(split_type, amount_cents, values)
     with conn:
         expense_id = repository.insert_expense(
-            conn, group_id, payer_id, description, amount_cents, split_type, category_id, shares
+            conn,
+            group_id,
+            payer_id,
+            description,
+            amount_cents,
+            split_type,
+            category_id,
+            shares,
+            spent_on,
         )
     return next(e for e in repository.list_expenses(conn, group_id) if e["id"] == expense_id)
 

@@ -1,5 +1,7 @@
 """All SQL for the ledger domain."""
 
+from datetime import date
+
 from tabby.db import Connection
 
 
@@ -79,12 +81,23 @@ def insert_expense(
     split_type: str,
     category_id: int,
     shares: dict[int, int],
+    spent_on: date | None = None,
 ) -> int:
+    # Without a date the row gets today's (UTC), like the column default.
     expense_id = conn.execute(
         "INSERT INTO expenses "
-        "(group_id, payer_id, description, amount_cents, split_type, category_id) "
-        "OUTPUT INSERTED.id VALUES (%s, %s, %s, %s, %s, %s)",
-        (group_id, payer_id, description, amount_cents, split_type, category_id),
+        "(group_id, payer_id, description, amount_cents, split_type, category_id, spent_on) "
+        "OUTPUT INSERTED.id "
+        "VALUES (%s, %s, %s, %s, %s, %s, COALESCE(%s, CAST(SYSUTCDATETIME() AS DATE)))",
+        (
+            group_id,
+            payer_id,
+            description,
+            amount_cents,
+            split_type,
+            category_id,
+            spent_on.isoformat() if spent_on else None,
+        ),
     ).fetchone()["id"]
     conn.executemany(
         "INSERT INTO expense_shares (expense_id, group_id, user_id, share_cents) "
@@ -99,8 +112,8 @@ def list_expenses(conn: Connection, group_id: int) -> list[dict]:
     expenses = [
         row | {"shares": {}}
         for row in conn.execute(
-            "SELECT id, payer_id, description, amount_cents, split_type, category_id, created_at "
-            "FROM expenses WHERE group_id = %s ORDER BY id DESC",
+            "SELECT id, payer_id, description, amount_cents, split_type, category_id, "
+            "spent_on, created_at FROM expenses WHERE group_id = %s ORDER BY id DESC",
             (group_id,),
         ).fetchall()
     ]

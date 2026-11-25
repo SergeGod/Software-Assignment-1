@@ -76,9 +76,11 @@ def test_friends_groups_and_the_group_ledger_for_settlement(client):
         "split_type": "equal",
         "category_id": 1,
         "participants": [{"user_id": a}, {"user_id": b}],
+        "spent_on": "2026-01-31",
     }
     created = client.post(f"/api/groups/{group_id}/expenses", json=expense, headers=auth(alice))
     assert created.status_code == 201
+    assert created.json()["spent_on"] == "2026-01-31"
     assert len(client.get(f"/api/groups/{group_id}/expenses", headers=auth(bob)).json()) == 1
     assert client.get(f"/api/groups/{group_id}/spending", headers=auth(bob)).json()[0]["total_cents"] == 1000
     assert len(client.get("/api/categories", headers=auth(bob)).json()) == 9

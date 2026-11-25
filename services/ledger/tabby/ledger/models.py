@@ -1,6 +1,6 @@
 """Request and response shapes for the ledger API (validated by Pydantic)."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -51,6 +51,8 @@ class ExpenseIn(BaseModel):
     split_type: Literal["equal", "shares", "exact"]
     category_id: int
     participants: list[Participant] = Field(min_length=1)
+    # The day the money was spent; today (UTC) when left out.
+    spent_on: date | None = None
 
 
 class ExpenseOut(BaseModel):
@@ -60,6 +62,7 @@ class ExpenseOut(BaseModel):
     amount_cents: int
     split_type: str
     category_id: int
+    spent_on: date
     created_at: datetime
     shares: dict[int, int]
 

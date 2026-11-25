@@ -251,6 +251,12 @@ function settleCard() {
   );
 }
 
+// Today in the browser's own time zone, as YYYY-MM-DD.
+function today() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
 function expenseFormCard() {
   const g = state.group;
   const form = el("form", { class: "split-equal", onsubmit: (e) => addExpense(e, form) },
@@ -260,6 +266,7 @@ function expenseFormCard() {
       state.categories.map((c) => el("option", { value: String(c.id) }, c.name)))),
     el("label", {}, "Paid by", el("select", { name: "payer_id" },
       g.members.map((m) => el("option", { value: String(m.id), selected: m.id === state.me.id }, nameOf(m.id))))),
+    el("label", {}, "Spent on", el("input", { name: "spent_on", type: "date", value: today(), max: today() })),
     el("label", {}, "Split", el("select", {
       name: "split_type",
       onchange: (e) => { form.className = `split-${e.target.value}`; },
@@ -288,7 +295,7 @@ function expensesCard() {
         el("div", {},
           el("div", {}, e.description),
           el("div", { class: "muted" },
-            `${nameOf(e.payer_id)} paid · ${categoryName(e.category_id)} · ${e.split_type} · ${e.created_at.slice(0, 10)}`),
+            `${nameOf(e.payer_id)} paid · ${categoryName(e.category_id)} · ${e.split_type} · ${e.spent_on}`),
         ),
         el("span", {},
           el("span", { class: "amount" }, euros(e.amount_cents)), " ",
@@ -405,6 +412,7 @@ async function addExpense(event, form) {
       split_type: splitType,
       category_id: Number(field(form, "category_id")),
       participants,
+      spent_on: field(form, "spent_on") || null,
     });
     await openGroup(state.group.id);
   }, "Expense added");

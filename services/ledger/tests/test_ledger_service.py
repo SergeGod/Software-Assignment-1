@@ -1,3 +1,5 @@
+from datetime import UTC, date, datetime, timedelta
+
 import pytest
 
 from tabby.errors import Conflict, Forbidden, InvalidInput, NotFound
@@ -56,6 +58,21 @@ def test_add_expense_stores_shares_that_add_up(conn, users, group):
     assert expense["shares"] == {ids[0]: 334, ids[1]: 333, ids[2]: 333}
     assert expense["category_id"] == GROCERIES
     assert service.list_expenses(conn, group, users["bob"])[0]["id"] == expense["id"]
+
+
+def test_spent_on_is_kept_defaults_to_today_and_cannot_be_in_the_future(conn, users, group):
+    alice = users["alice"]
+    today = datetime.now(UTC).date()
+
+    def add_on(spent_on):
+        return service.add_expense(
+            conn, group, alice, "Shop", 1000, alice, "equal", GROCERIES, [(alice, 1)], spent_on
+        )
+
+    assert add_on(date(2026, 1, 31))["spent_on"] == date(2026, 1, 31)
+    assert add_on(None)["spent_on"] == today
+    with pytest.raises(InvalidInput):
+        add_on(today + timedelta(days=2))
 
 
 @pytest.mark.parametrize("problem", ["payer", "participant", "duplicate", "category", "description"])

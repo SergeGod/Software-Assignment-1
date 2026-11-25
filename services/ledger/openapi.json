@@ -62,6 +62,18 @@
             "title": "Payer Id",
             "type": "integer"
           },
+          "spent_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spent On"
+          },
           "split_type": {
             "enum": [
               "equal",
@@ -117,6 +129,11 @@
             "title": "Shares",
             "type": "object"
           },
+          "spent_on": {
+            "format": "date",
+            "title": "Spent On",
+            "type": "string"
+          },
           "split_type": {
             "title": "Split Type",
             "type": "string"
@@ -129,6 +146,7 @@
           "amount_cents",
           "split_type",
           "category_id",
+          "spent_on",
           "created_at",
           "shares"
         ],
