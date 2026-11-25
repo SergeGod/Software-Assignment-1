@@ -6,3 +6,5 @@ ENVIRONMENT=$PREFIX-env
 SQL_SERVER=$PREFIX-sql
 SQL_ADMIN=tabbyadmin
 SERVICES="ledger settlement"
+# Storage account names allow no hyphens: the prefix without them, plus "ui".
+UI_STORAGE=${PREFIX//-/}ui

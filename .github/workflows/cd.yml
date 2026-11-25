@@ -1,0 +1,102 @@
+name: CD
+
+# Every push to main (that is, every merged pull request): run CI on this
+# commit, and only if it passes push both images tagged with the commit SHA,
+# deploy them to Azure Container Apps, publish the UI with the services' URLs
+# as its configuration, and wait until both services report healthy.
+on:
+  push:
+    branches: [main]
+
+# Never two deployments at once: the second waits for the first.
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: push image (${{ matrix.service }})
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write          # lets GITHUB_TOKEN push to ghcr.io
+    strategy:
+      matrix:
+        service: [ledger, settlement]
+    steps:
+      - uses: actions/checkout@v4
+      # Image names must be lowercase, and the owner name (SergeGod) is not.
+      - run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: services/${{ matrix.service }}
+          push: true
+          build-args: GIT_SHA=${{ github.sha }}
+          # The commit SHA, never only latest: one tag is exactly one build.
+          tags: ghcr.io/${{ env.OWNER }}/tabby-${{ matrix.service }}:${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - name: Images can be pulled without credentials
+        run: |
+          # Container Apps pulls the image again on every scale-up from zero, so
+          # it must be public: no registry password is stored in Azure.
+          for service in ledger settlement; do
+            image="ghcr.io/$OWNER/tabby-$service:$GITHUB_SHA"
+            if ! docker manifest inspect "$image" > /dev/null; then
+              echo "::error::$image is private. On GitHub: your profile -> Packages -> tabby-$service -> Package settings -> Change visibility -> Public. Then re-run this job."
+              exit 1
+            fi
+          done
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: UI origin (the only origin the services allow in CORS)
+        run: echo "UI_ORIGIN=$(infra/ui-url.sh)" >> "$GITHUB_ENV"
+      - name: Deploy ledger
+        id: ledger
+        env:
+          LEDGER_DB_PASSWORD: ${{ secrets.LEDGER_DB_PASSWORD }}
+        run: echo "url=$(infra/deploy-service.sh ledger "ghcr.io/$OWNER/tabby-ledger:$GITHUB_SHA" | tail -1)" >> "$GITHUB_OUTPUT"
+      - name: Deploy settlement
+        id: settlement
+        env:
+          SETTLEMENT_DB_PASSWORD: ${{ secrets.SETTLEMENT_DB_PASSWORD }}
+          LEDGER_URL: ${{ steps.ledger.outputs.url }}
+        run: echo "url=$(infra/deploy-service.sh settlement "ghcr.io/$OWNER/tabby-settlement:$GITHUB_SHA" | tail -1)" >> "$GITHUB_OUTPUT"
+      - name: Deploy the UI with the services' URLs as its configuration
+        run: |
+          infra/deploy-ui.sh "${{ steps.ledger.outputs.url }}" "${{ steps.settlement.outputs.url }}"
+          echo "UI: $UI_ORIGIN" >> "$GITHUB_STEP_SUMMARY"
+      - name: Ledger is healthy on this commit
+        run: infra/wait-healthy.sh "${{ steps.ledger.outputs.url }}" "$GITHUB_SHA" 300
+      - name: Settlement is healthy on this commit
+        run: infra/wait-healthy.sh "${{ steps.settlement.outputs.url }}" "$GITHUB_SHA" 300
+      - name: Startup logs (migrations)
+        if: always()
+        run: |
+          set -a; source infra/config.sh; set +a
+          for service in $SERVICES; do
+            echo "::group::$PREFIX-$service"
+            az containerapp logs show -g "$RG" -n "$PREFIX-$service" --type console --tail 60 --follow false || true
+            echo "::endgroup::"
+          done
