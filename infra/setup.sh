@@ -107,6 +107,11 @@ if [[ -z $chosen ]]; then
   create_db "$first_db" 1 paid
   chosen="1 paid"
 fi
+# setup-local.sh makes a new admin password on every run, so an existing
+# server is given the current one (this is also how it is rotated).
+az sql server update -g "$RG" -n "$SQL_SERVER" --admin-password "$SQL_ADMIN_PASSWORD" --output none
+az sql server firewall-rule create -g "$RG" -s "$SQL_SERVER" -n AllowAzureServices \
+  --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0 --output none
 echo "SQL server is in $(az sql server show -g "$RG" -n "$SQL_SERVER" --query location -o tsv); first database: $chosen"
 
 for service in $SERVICES; do

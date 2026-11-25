@@ -8,7 +8,8 @@ SQL_SERVER=$PREFIX-sql
 SQL_ADMIN=tabbyadmin
 SERVICES="ledger settlement"
 # Storage account names allow no hyphens: the prefix without them, plus "ui".
-UI_STORAGE=${PREFIX//-/}ui
+# The 1 is there because the plain name was taken (the schema allows a digit).
+UI_STORAGE=${PREFIX//-/}ui1
 # The identity the pipeline signs in as (OpenID Connect, no stored password),
 # trusted only for runs on main of this repository.
 IDENTITY=$PREFIX-github

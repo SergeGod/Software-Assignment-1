@@ -103,7 +103,7 @@ Everything runs in my own Azure for Students subscription, in one resource group
 | Container Apps | `shagopian-ieu2024-ledger`, `shagopian-ieu2024-settlement` | 0.25 vCPU / 0.5 GiB, 0 to 1 replica |
 | Azure SQL server | `shagopian-ieu2024-sql` | logins `ledger_user`, `settlement_user` |
 | Databases | `shagopian-ieu2024-ledger-db`, `shagopian-ieu2024-settlement-db` | serverless GP Gen5, 0.5-1 vCore, Azure SQL free offer (auto-pause 60 min, 32 GB), LRS backups |
-| UI | storage account `shagopianieu2024ui` (static website) | Standard LRS, pay per GB and request |
+| UI | storage account `shagopianieu2024ui1` (static website) | Standard LRS, pay per GB and request |
 | Images | `ghcr.io/sergegod/tabby-ledger:<sha>`, `ghcr.io/sergegod/tabby-settlement:<sha>` | public |
 
 ### Initial setup (once)
