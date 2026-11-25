@@ -135,8 +135,7 @@ Money is always integer cents (`amount_cents`). An expense's `split_type` is `eq
 ```
 .github/workflows/ci.yml      lint, tests, contracts, image builds, e2e on compose
 .github/workflows/cd.yml      on main: CI, push images, deploy services and UI, health check
-.github/workflows/azure-setup.yml   one-time Azure setup (manual trigger)
-infra/                        Azure CLI scripts used by the two workflows above
+infra/                        Azure CLI scripts: one-time setup (setup-local.sh) and what cd.yml runs
 docker-compose.yml            sqlserver + db-init + ledger + settlement + ui (nginx)
 db/init.sql                   local databases and logins (idempotent)
 services/
