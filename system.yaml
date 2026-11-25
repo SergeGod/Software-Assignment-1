@@ -9,7 +9,7 @@ ui:
   storage_account: shagopianieu2024ui
   calls: [ledger, settlement]
 azure:
-  resource_group: rg-sdd-3b
+  resource_group: rg-shagopian-ieu2024
   container_apps_environment: shagopian-ieu2024-env
   sql_server: shagopian-ieu2024-sql
   registry: ghcr.io/sergegod

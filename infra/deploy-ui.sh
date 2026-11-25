@@ -18,6 +18,7 @@ cat > "$build/config.js" <<EOF
 window.TABBY_CONFIG = {
   ledgerUrl: "$ledger_url",
   settlementUrl: "$settlement_url",
+  coldStarts: true,
 };
 EOF
 

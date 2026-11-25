@@ -5,4 +5,5 @@
 window.TABBY_CONFIG = {
   ledgerUrl: "http://localhost:8001",
   settlementUrl: "http://localhost:8002",
+  coldStarts: false,
 };
