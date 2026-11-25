@@ -2,7 +2,8 @@ name: CD
 
 # Every push to main (that is, every merged pull request): run CI on this
 # commit, and only if it passes push both images tagged with the commit SHA,
-# deploy them to Azure Container Apps and wait until both report healthy.
+# deploy them to Azure Container Apps, publish the UI with the services' URLs
+# as its configuration, and wait until both services report healthy.
 on:
   push:
     branches: [main]
@@ -52,9 +53,6 @@ jobs:
   deploy:
     needs: publish
     runs-on: ubuntu-latest
-    outputs:
-      ledger_url: ${{ steps.ledger.outputs.url }}
-      settlement_url: ${{ steps.settlement.outputs.url }}
     steps:
       - uses: actions/checkout@v4
       - run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
@@ -72,19 +70,23 @@ jobs:
       - uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: UI origin (the only origin the services allow in CORS)
+        run: echo "UI_ORIGIN=$(infra/ui-url.sh)" >> "$GITHUB_ENV"
       - name: Deploy ledger
         id: ledger
         env:
           LEDGER_DB_PASSWORD: ${{ secrets.LEDGER_DB_PASSWORD }}
-          UI_ORIGIN: ""          # set once the UI is deployed (CORS)
         run: echo "url=$(infra/deploy-service.sh ledger "ghcr.io/$OWNER/tabby-ledger:$GITHUB_SHA" | tail -1)" >> "$GITHUB_OUTPUT"
       - name: Deploy settlement
         id: settlement
         env:
           SETTLEMENT_DB_PASSWORD: ${{ secrets.SETTLEMENT_DB_PASSWORD }}
           LEDGER_URL: ${{ steps.ledger.outputs.url }}
-          UI_ORIGIN: ""
         run: echo "url=$(infra/deploy-service.sh settlement "ghcr.io/$OWNER/tabby-settlement:$GITHUB_SHA" | tail -1)" >> "$GITHUB_OUTPUT"
+      - name: Deploy the UI with the services' URLs as its configuration
+        run: |
+          infra/deploy-ui.sh "${{ steps.ledger.outputs.url }}" "${{ steps.settlement.outputs.url }}"
+          echo "UI: $UI_ORIGIN" >> "$GITHUB_STEP_SUMMARY"
       - name: Ledger is healthy on this commit
         run: infra/wait-healthy.sh "${{ steps.ledger.outputs.url }}" "$GITHUB_SHA" 300
       - name: Settlement is healthy on this commit

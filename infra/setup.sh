@@ -35,4 +35,15 @@ if ! az containerapp env show -g "$RG" -n "$ENVIRONMENT" > /dev/null 2>&1; then
     --logs-destination none --output none
 fi
 
+# --- Static UI: a storage account with the static website feature ---
+# Standard locally redundant storage is billed per GB stored and per request;
+# three small files cost a fraction of a cent per month.
+if ! az storage account show -g "$RG" -n "$UI_STORAGE" > /dev/null 2>&1; then
+  az storage account create -g "$RG" -n "$UI_STORAGE" -l "$LOCATION" \
+    --sku Standard_LRS --kind StorageV2 --https-only true --min-tls-version TLS1_2 --output none
+fi
+# Serves the files uploaded to the $web container at the account's web endpoint.
+az storage blob service-properties update --account-name "$UI_STORAGE" --auth-mode key \
+  --static-website --index-document index.html --404-document index.html --output none
+
 echo "Setup done. Next: the SQL logins (infra/create_sql_logins.py)."
