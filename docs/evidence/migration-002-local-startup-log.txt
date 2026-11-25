@@ -1,0 +1,2 @@
+ledger-1  | 2026-11-25 13:00:40,434 INFO tabby.db applying migration 002_add_expense_spent_on.sql
+ledger-1  | 2026-11-25 13:00:40,487 INFO tabby.db schema up to date: 1 migration(s) applied now, 2 in total

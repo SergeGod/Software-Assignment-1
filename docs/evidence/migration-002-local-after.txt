@@ -1,0 +1,17 @@
+$ SELECT version, applied_at FROM schema_migrations
+version applied_at
+------- ----------
+001_init.sql 2026-11-21 20:15:48.9697958
+002_add_expense_spent_on.sql 2026-11-25 13:00:40.4803870
+
+$ SELECT TOP 5 * FROM expenses ORDER BY id DESC
+id group_id payer_id description amount_cents split_type category_id created_at spent_on
+-- -------- -------- ----------- ------------ ---------- ----------- ---------- --------
+3 3 4 Groceries 3000 equal 1 2026-11-25 12:58:19.9660995 2026-11-25
+2 2 3 Pizza 2400 equal 1 2026-11-21 20:16:26.7925087 2026-11-21
+1 1 1 Groceries 3000 equal 1 2026-11-21 20:16:15.0605413 2026-11-21
+
+$ SELECT COUNT(*) AS expenses FROM expenses
+expenses
+--------
+3

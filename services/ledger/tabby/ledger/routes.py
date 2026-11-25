@@ -101,6 +101,7 @@ def add_expense(
         body.split_type,
         body.category_id,
         [(p.user_id, p.value) for p in body.participants],
+        body.spent_on,
     )
 
 

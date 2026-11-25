@@ -1,5 +1,7 @@
 """The migration runner, the seed and the settings, against the real test database."""
 
+from datetime import date
+
 import pytest
 
 from tabby import db
@@ -124,3 +126,28 @@ def test_settings_defaults_and_required_database_url(monkeypatch):
     monkeypatch.delenv("DATABASE_URL")
     with pytest.raises(RuntimeError):
         load_settings()
+
+
+def test_migration_002_adds_spent_on_and_keeps_the_existing_expenses(conn, users):
+    """Rewind the schema to migration 001, add an expense the old way, migrate again."""
+    alice = users["alice"]
+    with conn:
+        conn.execute("ALTER TABLE expenses DROP CONSTRAINT df_expenses_spent_on")
+        conn.execute("ALTER TABLE expenses DROP COLUMN spent_on")
+        conn.execute("DELETE FROM schema_migrations WHERE version = '002_add_expense_spent_on.sql'")
+        group_id = conn.execute(
+            "INSERT INTO expense_groups (name) OUTPUT INSERTED.id VALUES ('Flat')"
+        ).fetchone()["id"]
+        conn.execute("INSERT INTO group_members (group_id, user_id) VALUES (%s, %s)", (group_id, alice))
+        conn.execute(
+            "INSERT INTO expenses "
+            "(group_id, payer_id, description, amount_cents, split_type, category_id, created_at) "
+            "VALUES (%s, %s, 'Old rent', 90000, 'equal', 2, '2026-03-05T23:10:00')",
+            (group_id, alice),
+        )
+
+    assert db.migrate(conn) == ["002_add_expense_spent_on.sql"]
+
+    rows = conn.execute("SELECT description, amount_cents, spent_on FROM expenses").fetchall()
+    assert rows == [{"description": "Old rent", "amount_cents": 90000, "spent_on": date(2026, 3, 5)}]
+    assert db.migrate(conn) == []
