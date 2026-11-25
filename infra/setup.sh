@@ -82,6 +82,11 @@ first_db="$PREFIX-${SERVICES%% *}-db"
 chosen=""
 if db_exists "$first_db"; then
   chosen=existing
+elif [[ ${SQL_OFFER:-free} == paid ]]; then
+  # SQL_OFFER=paid skips the search: serverless databases on the credit.
+  ensure_server "$LOCATION"
+  create_db "$first_db" 1 paid
+  chosen="1 paid"
 else
   for region in $LOCATION ${SQL_REGIONS:-switzerlandnorth germanywestcentral belgiumcentral denmarkeast spaincentral}; do
     ensure_server "$region" || continue
