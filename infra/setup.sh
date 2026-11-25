@@ -25,9 +25,14 @@ if ! az identity show -g "$RG" -n "$IDENTITY" > /dev/null 2>&1; then
 fi
 # Azure accepts a GitHub token only if it was issued to a workflow run on the
 # main branch of this repository: no other branch, pull request or repository.
+# GitHub puts the numeric owner and repository ids in the subject
+# (repo:Owner@id/Repo@id:ref:...), so a renamed or recreated repository with
+# the same name would not match. They are read from the GitHub API.
+owner_id=$(gh api "repos/$GITHUB_REPO" -q .owner.id)
+repo_id=$(gh api "repos/$GITHUB_REPO" -q .id)
 az identity federated-credential create -g "$RG" --identity-name "$IDENTITY" --name github-main \
   --issuer https://token.actions.githubusercontent.com \
-  --subject "repo:$GITHUB_REPO:ref:refs/heads/main" \
+  --subject "repo:${GITHUB_REPO%%/*}@$owner_id/${GITHUB_REPO##*/}@$repo_id:ref:refs/heads/main" \
   --audiences api://AzureADTokenExchange --output none
 # Contributor on this resource group only: it can deploy here and nowhere else.
 principal=$(az identity show -g "$RG" -n "$IDENTITY" --query principalId -o tsv)

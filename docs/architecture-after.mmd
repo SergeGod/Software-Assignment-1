@@ -1,0 +1,28 @@
+flowchart TB
+    browser(["Browser: static UI (ui/: index.html, app.js, config.js)<br/>session token in localStorage"])
+
+    subgraph ledgerbox["Container 1: ledger service (services/ledger, port 8000)"]
+        acc["accounts<br/>sign-up, login, sessions, friends"]
+        led["Domain A: ledger<br/>groups, members, expenses, splits"]
+        ledapi{{"GET /api/groups/{id}/ledger<br/>members, shares, viewer_id"}}
+    end
+
+    subgraph setbox["Container 2: settlement service (services/settlement, port 8000)"]
+        set["Domain B: settlement<br/>balances, greedy settle-up, payments"]
+        client["ledger_client.py<br/>httpx, timeout LEDGER_TIMEOUT_S"]
+    end
+
+    ledgerdb[("ledger database (login ledger_user)<br/>users, sessions, friendships, categories,<br/>expense_groups, group_members,<br/>expenses, expense_shares")]
+    setdb[("settlement database (login settlement_user)<br/>payments")]
+
+    browser -->|"HTTPS JSON + Authorization: Bearer<br/>accounts, groups, expenses"| led
+    browser -->|"HTTPS JSON + Authorization: Bearer<br/>balances, payments"| set
+    set --> client
+    client ==>|"✂ SEAM: one HTTP call per request,<br/>forwards the user's token (LEDGER_URL)<br/>failure → 503 'ledger not reachable'"| ledapi
+    ledapi --> led
+    led --> acc
+    acc --> ledgerdb
+    led --> ledgerdb
+    set --> setdb
+
+    linkStyle 3 stroke:#c0392b,stroke-width:3px

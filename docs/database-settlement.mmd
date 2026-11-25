@@ -1,0 +1,17 @@
+erDiagram
+    payments {
+        INT id PK "IDENTITY"
+        INT group_id "id in ledger's database, no FK"
+        INT from_user_id "id in ledger's database, no FK"
+        INT to_user_id "id in ledger's database, no FK"
+        INT amount_cents "> 0"
+        DATETIME2 created_at
+    }
+    schema_migrations {
+        NVARCHAR version PK "file name"
+        DATETIME2 applied_at
+    }
+    service_heartbeat {
+        INT id PK "always 1"
+        DATETIME2 checked_at "written by /health"
+    }
