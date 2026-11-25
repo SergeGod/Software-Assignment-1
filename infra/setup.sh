@@ -35,26 +35,82 @@ az role assignment create --assignee-object-id "$principal" --assignee-principal
   --role Contributor --scope "$RG_ID" --output none
 
 # --- Azure SQL: one logical server, one serverless database per service ---
-if ! az sql server show -g "$RG" -n "$SQL_SERVER" > /dev/null 2>&1; then
-  az sql server create -g "$RG" -n "$SQL_SERVER" -l "$LOCATION" \
-    --admin-user "$SQL_ADMIN" --admin-password "$SQL_ADMIN_PASSWORD" --output none
+# General Purpose serverless, Gen5, 0.5 vCore minimum, locally redundant
+# backups, on Azure SQL's free offer (§7). The free offer is not accepted in
+# every region or for every size, and Azure only says so when the database is
+# created, so this tries in order: the group's region first, then the other
+# regions the subscription allows; in each, 1 vCore maximum (what §7 asks) and
+# then 2 (what Microsoft's own example uses). The SQL server may end up in a
+# different region from the rest; that only adds a few milliseconds per query.
+create_db() {  # create_db <name> <max vCores> <free|paid>
+  local extra=(--use-free-limit true --free-limit-exhaustion-behavior AutoPause)
+  [[ $3 == paid ]] && extra=(--auto-pause-delay 60 --max-size 32GB)
+  az sql db create -g "$RG" -s "$SQL_SERVER" -n "$1" \
+    --edition GeneralPurpose --compute-model Serverless --family Gen5 \
+    --min-capacity 0.5 --capacity "$2" "${extra[@]}" \
+    --backup-storage-redundancy Local --output none
+}
+db_exists() { az sql db show -g "$RG" -s "$SQL_SERVER" -n "$1" > /dev/null 2>&1; }
+user_db_count() {
+  az sql db list -g "$RG" -s "$SQL_SERVER" --query "length([?name!='master'])" -o tsv 2>/dev/null || echo 0
+}
+ensure_server() {  # ensure_server <region>: the server exists in that region
+  local current
+  current=$(az sql server show -g "$RG" -n "$SQL_SERVER" --query location -o tsv 2>/dev/null || true)
+  if [[ -n $current && $current != "$1" ]]; then
+    # Only ever removes a server that holds no database of ours.
+    [[ $(user_db_count) == 0 ]] || return 1
+    echo "Moving the empty SQL server from $current to $1"
+    az sql server delete -g "$RG" -n "$SQL_SERVER" --yes --output none
+    current=""
+  fi
+  if [[ -z $current ]]; then
+    # A deleted server's name takes a few minutes to become free again.
+    for try in $(seq 1 20); do
+      az sql server create -g "$RG" -n "$SQL_SERVER" -l "$1" --admin-user "$SQL_ADMIN" \
+        --admin-password "$SQL_ADMIN_PASSWORD" --output none 2>/dev/null && break
+      [[ $try == 20 ]] && return 1
+      sleep 30
+    done
+  fi
+  # "Allow Azure services": the special 0.0.0.0 rule lets Container Apps connect.
+  az sql server firewall-rule create -g "$RG" -s "$SQL_SERVER" -n AllowAzureServices \
+    --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0 --output none
+}
+
+first_db="$PREFIX-${SERVICES%% *}-db"
+chosen=""
+if db_exists "$first_db"; then
+  chosen=existing
+else
+  for region in $LOCATION ${SQL_REGIONS:-switzerlandnorth germanywestcentral belgiumcentral denmarkeast spaincentral}; do
+    ensure_server "$region" || continue
+    for vcores in 1 2; do
+      echo "Trying a free-offer database in $region with $vcores vCore(s) maximum"
+      if create_db "$first_db" "$vcores" free 2>/dev/null; then
+        chosen="$vcores free"
+        break 2
+      fi
+    done
+  done
 fi
-# "Allow Azure services": the special 0.0.0.0 rule lets Container Apps connect.
-az sql server firewall-rule create -g "$RG" -s "$SQL_SERVER" -n AllowAzureServices \
-  --start-ip-address 0.0.0.0 --end-ip-address 0.0.0.0 --output none
+if [[ -z $chosen ]]; then
+  # Last resort so the system can run at all: the same serverless database
+  # without the free offer, paid from the Azure for Students credit.
+  echo "The free offer was refused everywhere; creating paid serverless databases (1 vCore, auto-pause 60 min)"
+  ensure_server "$LOCATION"
+  create_db "$first_db" 1 paid
+  chosen="1 paid"
+fi
+echo "SQL server is in $(az sql server show -g "$RG" -n "$SQL_SERVER" --query location -o tsv); first database: $chosen"
 
 for service in $SERVICES; do
   db="$PREFIX-$service-db"
-  if ! az sql db show -g "$RG" -s "$SQL_SERVER" -n "$db" > /dev/null 2>&1; then
-    # General Purpose serverless, Gen5, 0.5-1 vCore, locally redundant backups,
-    # on Azure SQL's free offer: the offer itself fixes the auto-pause delay and
-    # the 32 GB size (so they are not passed), and the database pauses instead
-    # of billing when the monthly free amount is used up (§7).
-    az sql db create -g "$RG" -s "$SQL_SERVER" -n "$db" \
-      --edition GeneralPurpose --compute-model Serverless --family Gen5 \
-      --min-capacity 0.5 --capacity 1 \
-      --use-free-limit true --free-limit-exhaustion-behavior AutoPause \
-      --backup-storage-redundancy Local --output none
+  db_exists "$db" && continue
+  if [[ $chosen == existing ]]; then
+    create_db "$db" 1 free 2>/dev/null || create_db "$db" 2 free 2>/dev/null || create_db "$db" 1 paid
+  else
+    create_db "$db" $chosen
   fi
 done
 
