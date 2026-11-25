@@ -110,6 +110,7 @@ Everything on Azure is created and deployed by GitHub Actions, never by hand in 
 
 1. GitHub repository secrets (Settings -> Secrets and variables -> Actions): `AZURE_CREDENTIALS` (the class service principal as JSON, from the professor), and `SQL_ADMIN_PASSWORD`, `LEDGER_DB_PASSWORD`, `SETTLEMENT_DB_PASSWORD`, each generated without ever being shown: `gh secret set LEDGER_DB_PASSWORD --body "Tb_$(openssl rand -hex 16)"`.
 2. Actions -> **Azure setup (one-time)** -> Run workflow. [azure-setup.yml](.github/workflows/azure-setup.yml) runs [infra/setup.sh](infra/setup.sh) (SQL server with the "Allow Azure services" firewall rule, both databases, the Container Apps environment, the storage account with its static website switched on), then opens the firewall to its own runner IP only, creates one login per service with access to its own database only ([infra/create_sql_logins.py](infra/create_sql_logins.py)), and removes that firewall rule.
+   The same setup can be run from a laptop with your own `az login` instead: `bash infra/setup-local.sh` (this is how it was run on 2026-11-25).
 3. Merge a pull request into `main`. After the first CD run, if the deploy job says an image is private: GitHub -> Packages -> `tabby-<service>` -> Package settings -> Change visibility -> Public, then re-run the job.
 
 ### Every merge to main
