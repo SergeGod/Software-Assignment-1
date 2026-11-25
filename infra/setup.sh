@@ -47,13 +47,13 @@ for service in $SERVICES; do
   db="$PREFIX-$service-db"
   if ! az sql db show -g "$RG" -s "$SQL_SERVER" -n "$db" > /dev/null 2>&1; then
     # General Purpose serverless, Gen5, 0.5-1 vCore, locally redundant backups,
-    # on Azure SQL's free offer: it fixes auto-pause at 60 minutes and the size
-    # at 32 GB, and pauses the database instead of billing when the monthly
-    # free amount is used up (§7).
+    # on Azure SQL's free offer: the offer itself fixes the auto-pause delay and
+    # the 32 GB size (so they are not passed), and the database pauses instead
+    # of billing when the monthly free amount is used up (§7).
     az sql db create -g "$RG" -s "$SQL_SERVER" -n "$db" \
       --edition GeneralPurpose --compute-model Serverless --family Gen5 \
-      --min-capacity 0.5 --capacity 1 --auto-pause-delay 60 --max-size 32GB \
-      --use-free-limit --free-limit-exhaustion-behavior AutoPause \
+      --min-capacity 0.5 --capacity 1 \
+      --use-free-limit true --free-limit-exhaustion-behavior AutoPause \
       --backup-storage-redundancy Local --output none
   fi
 done
